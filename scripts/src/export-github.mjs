@@ -23,5 +23,7 @@ for (const source of ['README.md', '.gitignore', 'package.json', 'pnpm-lock.yaml
   files.push({ source, remote: source, bytes: (await stat(source)).size });
 }
 await walk('artifacts/mini-cattle-farm/dist/public', 'docs', true);
+// Keep both supported Pages publishing folders on the same verified build.
+await walk('artifacts/mini-cattle-farm/dist/public', '', true);
 await writeFile('/tmp/minicattle-github-manifest.json', JSON.stringify(files));
 console.log(JSON.stringify({ files: files.length, bytes: files.reduce((n, f) => n + f.bytes, 0), manifest: '/tmp/minicattle-github-manifest.json' }));
