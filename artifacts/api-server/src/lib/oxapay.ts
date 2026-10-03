@@ -1,4 +1,5 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import { Buffer } from "node:buffer";
 
 export class CheckoutError extends Error {
   constructor(public statusCode: number, message: string) { super(message); }

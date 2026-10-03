@@ -4,7 +4,7 @@ import { test } from "node:test";
 import { db, pool, checkoutInventory, checkoutOrders } from "@workspace/db";
 import { eq, sql } from "drizzle-orm";
 import { applyPayment, checkoutAvailable, createSandboxOrder, readPrivateOrder, validatePayment, seedSandboxInventory } from "./checkout";
-import { verifySignature, type PaymentInfo } from "./oxapay";
+import { safeEqual, verifySignature, type PaymentInfo } from "./oxapay";
 
 test("HMAC requires exact raw bytes and rejects forged or malformed signatures", () => {
   const bytes = Buffer.from('{"status":"paid", "amount":850}');
@@ -14,6 +14,24 @@ test("HMAC requires exact raw bytes and rejects forged or malformed signatures",
   assert.equal(verifySignature(Buffer.from('{"status":"paid","amount":850}'), signature, fixtureKey), false);
   assert.equal(verifySignature(bytes, "0".repeat(128), fixtureKey), false);
   assert.equal(verifySignature(bytes, "garbage", fixtureKey), false);
+});
+
+test("receipt and callback checks work without a global Buffer in the edge runtime", () => {
+  const original = globalThis.Buffer;
+  const bytes = original.from('{"type":"invoice"}');
+  const key = "edge-runtime-fixture-key";
+  const signature = createHmac("sha512", key).update(bytes).digest("hex");
+  try {
+    // Deno provides node:buffer as an import, not as a global. The Node tests
+    // previously masked an unbound Buffer reference in the shared engine.
+    globalThis.Buffer = undefined as unknown as typeof Buffer;
+    assert.equal(safeEqual("a".repeat(64), "a".repeat(64)), true);
+    assert.equal(safeEqual("a".repeat(64), "b".repeat(64)), false);
+    assert.equal(verifySignature(bytes, signature, key), true);
+    assert.equal(verifySignature(bytes, "0".repeat(128), key), false);
+  } finally {
+    globalThis.Buffer = original;
+  }
 });
 
 test("persistent orders: trusted totals, concurrency, private access, transitions and reservation lifecycle", async () => {

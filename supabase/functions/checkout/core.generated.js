@@ -2748,6 +2748,7 @@ var catalog_default = {
 
 // src/lib/oxapay.ts
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import { Buffer } from "node:buffer";
 var CheckoutError = class extends Error {
   constructor(statusCode, message) {
     super(message);
