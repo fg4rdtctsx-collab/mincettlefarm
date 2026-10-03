@@ -258,7 +258,7 @@ export function About() {
 }
 
 export function Contact() {
-  const [state, setState] = useState<'idle' | 'blocked'>('idle');
+  const [state, setState] = useState<'idle' | 'email'>('idle');
   const faqs: [string, string][] = [
     ['How do I verify the breeder’s reputation?', 'We provide detailed breeder profiles and reviews to help you choose reputable sellers.'],
     ['What should I consider when buying miniature cattle?', 'Consider health history, breed standards, and suitability for your farm or homestead needs.'],
@@ -271,15 +271,23 @@ export function Contact() {
       <section className="mc-container mc-sec mc-narrow">
         <h2 className="mc-center">Discover Your Ideal Highland and Miniature Cattle Now</h2>
         <p className="mc-lead mc-center">Reach Out to Trusted Breeders Through Our Secure Platform<span className="mc-contact-email">Email us at <a href="mailto:salesminicattlefarm@gmail.com">salesminicattlefarm@gmail.com</a></span></p>
-        <form className="mc-form" onSubmit={(e) => { e.preventDefault(); setState('blocked'); }} data-testid="form-contact">
-          <label>Name <abbr>*</abbr><input required name="name" autoComplete="name" data-testid="input-name" /></label>
-          <label>Email <abbr>*</abbr><input required type="email" name="email" autoComplete="email" data-testid="input-email" /></label>
-          <label>Subject<input name="subject" data-testid="input-subject" /></label>
-          <label>Message <abbr>*</abbr><textarea required rows={6} name="message" data-testid="input-message" /></label>
-          <button type="submit" className="mc-btn" data-testid="button-submit">Submit</button>
-          {state === 'blocked' && (
-            <div className="mc-alert" role="alert" data-testid="status-not-connected">
-              <strong>Message not sent.</strong> This contact form is not connected yet. Please email us directly at <a href="mailto:salesminicattlefarm@gmail.com">salesminicattlefarm@gmail.com</a>.
+        <form className="mc-form" onSubmit={(e) => {
+          e.preventDefault();
+          const data = new FormData(e.currentTarget);
+          const subject = String(data.get('subject') || '').trim() || 'Mini Cattle Farm inquiry';
+          const body = `Name: ${String(data.get('name') || '').trim()}\nReply email: ${String(data.get('email') || '').trim()}\n\n${String(data.get('message') || '').trim()}`;
+          window.location.href = `mailto:salesminicattlefarm@gmail.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+          setState('email');
+        }} data-testid="form-contact">
+          <label>Name <abbr>*</abbr><input required name="name" maxLength={100} autoComplete="name" data-testid="input-name" /></label>
+          <label>Email <abbr>*</abbr><input required type="email" name="email" maxLength={200} autoComplete="email" data-testid="input-email" /></label>
+          <label>Subject<input name="subject" maxLength={180} data-testid="input-subject" /></label>
+          <label>Message <abbr>*</abbr><textarea required rows={6} name="message" maxLength={3000} data-testid="input-message" /></label>
+          <button type="submit" className="mc-btn" data-testid="button-submit">Open email to send</button>
+          <p className="mc-note">This opens your email app with your message filled in. Press Send there to deliver it.</p>
+          {state === 'email' && (
+            <div className="mc-alert" role="status" data-testid="status-email-draft">
+              <strong>Finish sending in your email app.</strong> If it did not open, your message is still here. You can email <a href="mailto:salesminicattlefarm@gmail.com">salesminicattlefarm@gmail.com</a> directly.
             </div>
           )}
         </form>

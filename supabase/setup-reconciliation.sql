@@ -13,7 +13,7 @@ begin
   end if;
 end $$;
 select cron.schedule(
-  'mini-cattle-sandbox-reconcile',
+  'mini-cattle-checkout-reconcile',
   '* * * * *',
   $job$
   select net.http_post(

@@ -1,6 +1,6 @@
 # Mini Cattle Farm
 
-Static React storefront and owner interface, with a Supabase sandbox checkout
+Static React storefront and owner interface, with a Supabase OxaPay checkout
 backend. GitHub contains source code; committing source does not activate
 payments or publish a site.
 
@@ -44,6 +44,15 @@ Apply `supabase/migrations/`, configure server secrets, and deploy the
 `checkout` function only to the selected project. Follow
 [the deployment guide](docs/github-supabase-deployment.md).
 
-**Sandbox only. Do not send real funds.** Bank transfer is unavailable. Public
-account signup never grants owner access. A prepared static site does not mean
-owner login, callbacks, reconciliation, or data transfer have been verified.
+Live checkout uses separate protected `live_checkout_*` tables. The managing
+owner approved the displayed listing prices and one animal per in-stock listing.
+Existing test quantities and orders remain separate and are never converted into
+real inventory. Bank transfer remains unavailable until valid details are supplied.
+Public account signup never grants owner access.
+
+New checkout pages send `x-mcf-checkout-client: live-v1`; older cached sandbox
+pages cannot create real invoices. Payment is confirmed only through verified
+OxaPay information, never by a redirect or a browser assertion.
+
+The contact form opens a pre-filled email draft. Visitors must press Send in their
+email app; it does not claim automatic email delivery.

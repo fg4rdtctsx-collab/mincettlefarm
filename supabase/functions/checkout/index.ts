@@ -1,8 +1,8 @@
 import { Buffer } from 'node:buffer';
-import { db, checkoutInventory, checkoutOrders } from '@workspace/db';
+import { db, checkoutInventory, checkoutOrders, rateLimitTable } from '@workspace/db';
 import { eq, desc, sql } from 'drizzle-orm';
 import {
-  CheckoutError, CreateOrderBody, applyPayment, checkoutAvailable,
+  CheckoutError, CreateOrderBody, applyPayment, checkoutAvailable, checkoutIsSandbox,
   createSandboxOrder, readPrivateOrder, receipt, reconcile,
   reconcileAbandonedOrders, seedSandboxInventory, oxapay, verifySignature,
   safeEqual, sha256,
@@ -38,13 +38,14 @@ async function throttle(req: Request) {
   // or vary. Both counters are persistent across edge instances.
   const address = req.headers.get('x-forwarded-for')?.split(',')[0].trim() || 'unknown';
   const identity = sha256(address);
+  const table = sql.identifier(rateLimitTable);
   for (const [key, maximum] of [[`ip:${identity}`, 15], ['global', 150]] as const) {
     const rows = await db.execute(sql`
-      insert into public.sandbox_checkout_rate_limits (key, window_start, requests)
+      insert into public.${table} (key, window_start, requests)
       values (${key}, now(), 1)
       on conflict (key) do update set
-        requests = case when sandbox_checkout_rate_limits.window_start < now() - interval '15 minutes' then 1 else sandbox_checkout_rate_limits.requests + 1 end,
-        window_start = case when sandbox_checkout_rate_limits.window_start < now() - interval '15 minutes' then now() else sandbox_checkout_rate_limits.window_start end
+        requests = case when ${table}.window_start < now() - interval '15 minutes' then 1 else ${table}.requests + 1 end,
+        window_start = case when ${table}.window_start < now() - interval '15 minutes' then now() else ${table}.window_start end
       returning requests
     `);
     if (Number(rows[0]?.requests) > maximum) throw new CheckoutError(429, 'Too many checkout requests. Please wait before retrying.');
@@ -76,7 +77,7 @@ async function handle(req: Request): Promise<Response> {
     if (!expected || !token || !safeEqual(sha256(expected), sha256(token))) throw new CheckoutError(401, 'Unauthorized scheduled request.');
     await initialize();
     await reconcileAbandonedOrders();
-    await db.execute(sql`delete from public.sandbox_checkout_rate_limits where window_start < now() - interval '1 day'`);
+    await db.execute(sql`delete from public.${sql.identifier(rateLimitTable)} where window_start < now() - interval '1 day'`);
     return json({ ok: true });
   }
   if (path === '/api/payments/oxapay/callback' && req.method === 'POST') {
@@ -102,15 +103,25 @@ async function handle(req: Request): Promise<Response> {
   if (path === '/api/checkout/config' && req.method === 'GET') {
     await initialize();
     const products = await db.select().from(checkoutInventory);
+    // Old cached pages explicitly describe payments as sandbox-only. Do not let
+    // those pages issue real invoices during the frontend release transition.
+    const compatible = checkoutIsSandbox() || req.headers.get('x-mcf-checkout-client') === 'live-v1';
+    const available = checkoutAvailable() && compatible;
     return json({
-      available: checkoutAvailable(), sandbox: true,
-      message: checkoutAvailable()
-        ? 'Sandbox test checkout only. Do not send real funds. Displayed stock is artificial test inventory.'
-        : 'Crypto checkout is unavailable. Live payments are disabled; sandbox configuration must be completed.',
+      available, sandbox: checkoutIsSandbox(),
+      message: !compatible ? 'Please refresh this page after the checkout update has been published.'
+        : available
+        ? (checkoutIsSandbox()
+          ? 'Sandbox test checkout only. Do not send real funds. Displayed stock is artificial test inventory.'
+          : 'Pay securely through OxaPay. Prices and availability are verified before your invoice is created.')
+        : 'Crypto checkout is unavailable. Payment configuration must be completed.',
       products: products.map(p => ({ id: p.id, name: p.name, price: p.priceCents / 100, available: p.available })),
     });
   }
   if (path === '/api/orders' && req.method === 'POST') {
+    if (!checkoutIsSandbox() && req.headers.get('x-mcf-checkout-client') !== 'live-v1') {
+      throw new CheckoutError(409, 'Please refresh checkout to use the updated payment page.');
+    }
     await throttle(req);
     let input;
     try { input = JSON.parse(Buffer.from(await rawBody(req)).toString('utf8')); }
@@ -142,7 +153,7 @@ Deno.serve(async req => {
   const cors: Record<string, string> = origin && allowed ? {
     'Access-Control-Allow-Origin': allowed, 'Vary': 'Origin',
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'authorization, content-type',
+    'Access-Control-Allow-Headers': 'authorization, content-type, x-mcf-checkout-client',
     'Access-Control-Max-Age': '600',
   } : {};
   let response: Response;

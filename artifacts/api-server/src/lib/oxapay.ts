@@ -7,7 +7,8 @@ export const sha256 = (value: string) => createHash("sha256").update(value).dige
 export function accessToken(id: string): string {
   const secret = process.env.SESSION_SECRET;
   if (!secret) throw new CheckoutError(503, "Checkout security configuration is missing.");
-  return createHmac("sha256", secret).update(`sandbox-order:${id}`).digest("hex");
+  const namespace = process.env.CHECKOUT_LIVE_ENABLED === "true" ? "live-order" : "sandbox-order";
+  return createHmac("sha256", secret).update(`${namespace}:${id}`).digest("hex");
 }
 export function verifySignature(raw: Buffer, signature: string | undefined, secret: string): boolean {
   if (!signature || !/^[a-f\d]{128}$/i.test(signature)) return false;
