@@ -7,16 +7,21 @@ Product links, checkout links, and private receipt fragments survive Pages
 refreshes using `404.html`. Receipt access tokens stay in the fragment during
 the Pages redirect, not in a query sent to GitHub.
 
-No deployment workflow automatically runs on push. Selecting GitHub Pages'
-`main` branch and `/docs` folder is a separate owner action. After Pages is
-enabled, subsequent commits changing that folder can publish updates.
+No custom deployment workflow is installed. GitHub Pages is configured to serve
+`main` from the repository root at the custom domain `minicattlefarm.com`.
+The generated static output is provided both at the root and in `docs/`, allowing
+either publishing folder. Keep `.nojekyll` and `CNAME` in the selected folder.
+Merging a release pull request into `main` updates the live site.
 
 ## Frontend configuration
 
 Create an ignored `.env.production.local` inside `artifacts/mini-cattle-farm`
 with the selected Supabase project URL and **publishable/anon** browser key.
 Use the variable names in `.env.example`. Never enter a service-role key there.
-Build with the correct `BASE_PATH` and copy the output into `docs/`.
+Build with `BASE_PATH=/` for `minicattlefarm.com`. Copy the output into the
+configured publishing folder without deleting source files or changing `CNAME`;
+the current release mirrors it at the root and in `docs/`. A custom-domain site
+must not be built with the repository prefix `/mincettlefarm/`.
 
 Until these values and the Edge Function exist, storefront browsing works but
 sign-in is explicitly unavailable and checkout cannot load.
