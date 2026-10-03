@@ -1,0 +1,8 @@
+project_id = "mini-cattle-farm"
+
+[functions.checkout]
+# Public receipts use private access tokens, callbacks use exact-byte HMAC,
+# owner endpoints verify Supabase users independently, and the scheduled
+# endpoint uses a separate server secret. The gateway cannot require JWTs
+# for OxaPay callbacks.
+verify_jwt = false
