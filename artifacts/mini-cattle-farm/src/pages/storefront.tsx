@@ -71,7 +71,8 @@ function HomeHeroCarousel() {
 }
 
 export function Home() {
-  const highland = secondaryProducts;
+  const { products: liveProducts } = useStore();
+  const highland = secondaryProducts.map(p => liveProducts.find(x => x.id === p.id)).filter(p => p && p.active !== false) as Product[];
   return (
     <Wrap>
       <section className="mc-home-hero">
@@ -86,7 +87,7 @@ export function Home() {
       <section className="mc-container mc-sec">
         <h3 className="mc-h3c">Trusted Miniature Cattle &amp; Highland Cows for Your Homestead</h3>
         <p className="mc-lead mc-center">Discover our curated collection of charming miniature cattle and Highland cows — perfect additions to your farm. Take advantage of exclusive deals tailored to support your homesteading lifestyle.</p>
-        <Grid items={homeProducts} />
+        <Grid items={homeProducts.map(p => liveProducts.find(x => x.id === p.id)).filter(p => p && p.active !== false) as Product[]} />
       </section>
       <section className="mc-container mc-sec mc-why">
         <div>
@@ -115,13 +116,13 @@ export function Home() {
 type Sort = 'default' | 'price-asc' | 'price-desc' | 'name';
 
 function Listing({ title, slug }: { title: string; slug?: string }) {
-  const { priceOf } = useStore();
+  const { priceOf, products } = useStore();
   const [cat, setCat] = useState(slug ?? 'all');
   const [sort, setSort] = useState<Sort>('default');
   const [shown, setShown] = useState(24);
   const [quick, setQuick] = useState<Product | null>(null);
   const list = useMemo(() => {
-    let l = cat === 'all' ? [...products] : products.filter((p) => p.categories.some((c) => c.slug === cat));
+    let l = products.filter(p => p.active !== false && (cat === 'all' || p.categories.some(c => c.slug === cat)));
     if (sort === 'price-asc') l.sort((a, b) => priceOf(a) - priceOf(b));
     if (sort === 'price-desc') l.sort((a, b) => priceOf(b) - priceOf(a));
     if (sort === 'name') l.sort((a, b) => a.name.localeCompare(b.name));
@@ -171,10 +172,11 @@ export function Category({ slug }: { slug: string }) {
 }
 
 export function ProductPage({ slug }: { slug: string }) {
+  const { products } = useStore();
   const p = products.find((x) => x.slug === slug);
   const { addToCart, inStock, wishlist, compare, toggleWish, toggleCompare, inCart, textOf } = useStore();
   const [img, setImg] = useState(0);
-  if (!p) return <NotFound />;
+  if (!p || p.active === false) return <NotFound />;
   const gallery = [...new Set(p.images)];
   const related = products.filter((x) => x.id !== p.id && x.categories[0]?.slug === p.categories[0]?.slug).slice(0, 4);
   const ok = inStock(p);

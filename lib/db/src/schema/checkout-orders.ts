@@ -19,6 +19,9 @@ export const checkoutOrders = pgTable("sandbox_checkout_orders", {
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   checkedAt: timestamp("checked_at", { withTimezone: true }),
+  paymentMethod: text("payment_method").$type<"crypto" | "bank">().notNull().default("crypto"),
+  fulfilledAt: timestamp("fulfilled_at", { withTimezone: true }),
+  paidAt: timestamp("paid_at", { withTimezone: true }),
 });
 export const insertCheckoutOrderSchema = createInsertSchema(checkoutOrders);
 export type CheckoutOrder = typeof checkoutOrders.$inferSelect;

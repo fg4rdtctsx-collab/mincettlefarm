@@ -24,7 +24,7 @@ function Warn() {
 }
 
 export function Checkout() {
-  const { cart } = useStore();
+  const { cart, products } = useStore();
   const qc = useQueryClient();
   const config = useGetCheckoutConfig({ query: { queryKey: getGetCheckoutConfigQueryKey() }, request: liveClient });
   const create = useCreateOrder({ request: liveClient });
@@ -34,14 +34,14 @@ export function Checkout() {
   const [submitting, setSubmitting] = useState(false);
   const keyRef = useRef<{ sig: string; key: string } | null>(null);
   const lines = useMemo(() => cart.map((l) => ({ id: l.id, qty: l.qty })), [cart]);
-  const sig = JSON.stringify({ buyer: { name: buyer.name.trim(), email: buyer.email.trim(), phone: buyer.phone.trim() }, lines });
+  const sig = JSON.stringify({ buyer: { name: buyer.name.trim(), email: buyer.email.trim(), phone: buyer.phone.trim() }, lines, method });
   const sandbox = config.data?.sandbox === true;
   const catalog = config.data?.products ?? products.map(p => ({ id: p.id, name: p.name, price: p.price, available: 0 }));
   const rows = lines.map((l) => ({ ...l, p: catalog.find((c) => c.id === l.id) }));
   const total = rows.reduce((s, r) => s + (r.p ? r.p.price * r.qty : 0), 0);
   const problem = config.data && rows.find((r) => !r.p || r.p.available < r.qty);
   const valid = buyer.name.trim().length >= 2 && /^\S+@\S+\.\S+$/.test(buyer.email.trim()) && buyer.phone.trim().length >= 5;
-  const canSubmit = !!config.data?.available && method === 'crypto' && valid && !problem && !submitting && lines.length > 0;
+  const canSubmit = !!config.data && (method === 'bank' ? !!config.data.bankAvailable : !!config.data.available && !problem) && valid && !submitting && lines.length > 0;
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -59,7 +59,7 @@ export function Checkout() {
       catch { /* The private fragment remains usable without browser storage. */ }
     }
     try {
-      const s = await create.mutateAsync({ data: { buyer: { name: buyer.name.trim(), email: buyer.email.trim(), phone: buyer.phone.trim() }, lines, idempotencyKey: keyRef.current.key } });
+      const s = await create.mutateAsync({ data: { buyer: { name: buyer.name.trim(), email: buyer.email.trim(), phone: buyer.phone.trim() }, lines, idempotencyKey: keyRef.current.key, paymentMethod: method } });
       try { localStorage.setItem(tokenKey(s.order.id), s.accessToken); }
       catch { /* Navigation carries the private token even when storage is blocked. */ }
       qc.setQueryData(getGetOrderQueryKey(s.order.id, { token: s.accessToken }), s.order);
@@ -99,17 +99,17 @@ export function Checkout() {
                 <label className={method === 'crypto' ? 'on' : ''}>
                   <input type="radio" name="pay" checked={method === 'crypto'} onChange={() => setMethod('crypto')} data-testid="radio-crypto" />
                   <span><strong>Cryptocurrency {sandbox && <em>Test mode</em>}</strong>
-                    <small>An invoice is created on OxaPay's secure hosted payment page. {sandbox ? 'This is a test invoice and will not be fulfilled. ' : 'The farm will arrange fulfillment after payment is confirmed. '}Processor or network fees may be added according to merchant settings; check the displayed amount before paying. We never ask for wallet keys.</small></span>
+                    <small>An invoice is created on OxaPay's secure hosted payment page. {sandbox ? 'This is a test invoice and will not be fulfilled. ' : 'Crypto can confirm sooner than bank transfers during busy periods. Confirmed crypto orders receive priority dispatch. '}</small></span>
                 </label>
-                <label className={method === 'bank' ? 'on disabled' : 'disabled'}>
-                  <input type="radio" name="pay" disabled data-testid="radio-bacs" />
-                  <span><strong>Direct bank transfer <em>Unavailable</em></strong>
-                    <small>Bank transfers may take longer to confirm, especially during busy periods. Bank details have not been supplied for this site yet, so this option is unavailable. Do not send money based on this page.</small></span>
+                <label className={method === 'bank' ? 'on' : ''}>
+                  <input type="radio" name="pay" checked={method === 'bank'} onChange={() => setMethod('bank')} data-testid="radio-bacs" />
+                  <span><strong>Direct bank transfer</strong>
+                    <small>Email salesminicattlefarm@gmail.com to confirm animal availability and arrange payment. Bank transfers may take longer to confirm, especially during busy periods. Your request does not reserve stock or confirm payment.</small></span>
                 </label>
               </div>
-              {problem && <div className="mc-alert mc-alert-err" role="alert" data-testid="status-stock-problem">One or more calves in your cart are not available in the quantity requested. Edit your cart to continue.</div>}
+              {problem && <div className="mc-alert mc-alert-err" role="alert" data-testid="status-stock-problem">An animal in your cart is sold out or temporarily reserved by another checkout. Your cart is saved. Contact the farm to check availability, or edit your cart before paying by crypto.</div>}
               {error && <div className="mc-alert mc-alert-err" role="alert" data-testid="status-checkout-error">{error}</div>}
-              <button type="submit" className="mc-btn" disabled={!canSubmit} aria-busy={submitting} data-testid="button-place-order">{submitting ? 'Creating invoice...' : sandbox ? 'Create sandbox invoice' : 'Proceed to payment'}</button>
+              <button type="submit" className="mc-btn" disabled={!canSubmit} aria-busy={submitting} data-testid="button-place-order">{submitting ? 'Saving request…' : method === 'bank' ? 'Arrange bank transfer' : sandbox ? 'Create sandbox invoice' : 'Proceed to payment'}</button>
               {!valid && <p className="mc-note">Enter your name, a valid email and a phone number to continue.</p>}
             </div>
             <aside className="mc-totals">
@@ -149,7 +149,8 @@ function Receipt({ o }: { o: OrderReceipt }) {
         <p><span className={`mc-status ${o.status}`} data-testid="status-order">{o.status}</span></p>
         <p data-testid="text-order-message">{o.message}</p>
         {o.sandbox && <Warn />}
-        {ACTIVE.includes(o.status) && (
+        {o.paymentMethod === 'bank' && o.status === 'pending' && o.bankEmailUrl?.startsWith('mailto:salesminicattlefarm@gmail.com?') && <p><a className="mc-btn" href={o.bankEmailUrl} data-testid="button-bank-email">Email the farm to arrange bank transfer</a><small className="mc-note" style={{display:'block'}}>This opens a draft in your email app. You must send it yourself. Stock is not reserved until the farm confirms payment and availability.</small></p>}
+        {o.paymentMethod !== 'bank' && ACTIVE.includes(o.status) && (
           <p className="mc-note" role="status">
             {o.status === 'creating' ? 'Your invoice is still being created. Keep this page open; it refreshes automatically. Do not place the order again.' : 'Checking for payment every 10 seconds. Returning from the payment page does not mean you have paid.'}
           </p>
@@ -157,7 +158,7 @@ function Receipt({ o }: { o: OrderReceipt }) {
         {o.paymentUrl && ACTIVE.includes(o.status) && (
           <a href={o.paymentUrl} className="mc-btn" rel="noopener noreferrer" data-testid="link-payment">Open hosted payment page</a>
         )}
-        <p className="mc-note">Expires {new Date(o.expiresAt).toLocaleString()}. Order {o.id}{o.trackId ? `, invoice ${o.trackId}` : ''}.</p>
+        <p className="mc-note">{o.paymentMethod !== 'bank' && <>Expires {new Date(o.expiresAt).toLocaleString()}. </>}Order {o.id}{o.trackId ? `, invoice ${o.trackId}` : ''}.</p>
         <div className="mc-alert" role="note">This receipt is private. Anyone with this link can view it, so do not share it.</div>
       </div>
       <aside className="mc-totals">

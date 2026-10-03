@@ -23,11 +23,21 @@ import type {
   CheckoutConfig,
   ErrorResponse,
   GetOrderParams,
+  GetOwnerAnalyticsParams,
   HealthStatus,
+  ImageInput,
+  ImageUpload,
+  LivestockArchive,
+  LivestockInput,
+  LivestockUpdate,
+  OrderAction,
   OrderInput,
   OrderReceipt,
   OrderSession,
-  OwnerOrder
+  OwnerAnalytics,
+  OwnerLivestock,
+  OwnerOrder,
+  VisitInput
 } from './api.schemas';
 
 import { customFetch } from '../custom-fetch';
@@ -56,6 +66,166 @@ const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKe
   }
   return result;
 };
+
+export const getRecordVisitUrl = () => {
+
+
+
+
+  return `/api/visits`
+}
+
+export const recordVisit = async (visitInput: VisitInput, options?: Parameters<typeof customFetch>[1]): Promise<HealthStatus> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<HealthStatus>(getRecordVisitUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(visitInput)
+  }
+);}
+
+
+
+
+
+export const getRecordVisitMutationKey = () => ['recordVisit'] as const;
+
+export const getRecordVisitMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof recordVisit>>, TError,RecordVisitMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof recordVisit>>, TError,RecordVisitMutationVariables, TContext> => {
+
+const mutationKey = getRecordVisitMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof recordVisit>>, RecordVisitMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  recordVisit(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RecordVisitMutationResult = NonNullable<Awaited<ReturnType<typeof recordVisit>>>
+    export type RecordVisitMutationBody = BodyType<VisitInput>
+    export type RecordVisitMutationError = ErrorType<unknown>
+    export type RecordVisitMutationVariables = {data: BodyType<VisitInput>}
+
+    export const useRecordVisit = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof recordVisit>>, TError,RecordVisitMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof recordVisit>>,
+        TError,
+        RecordVisitMutationVariables,
+        TContext
+      > => {
+      return useMutation(getRecordVisitMutationOptions(options));
+    }
+
+export const getGetOwnerAnalyticsUrl = (params: GetOwnerAnalyticsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/owner/analytics?${stringifiedParams}` : `/api/owner/analytics`
+}
+
+export const getOwnerAnalytics = async (params: GetOwnerAnalyticsParams, options?: Parameters<typeof customFetch>[1]): Promise<OwnerAnalytics> => {
+
+  return customFetch<OwnerAnalytics>(getGetOwnerAnalyticsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetOwnerAnalyticsQueryKey = (params?: GetOwnerAnalyticsParams,) => {
+    return [
+    `/api/owner/analytics`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetOwnerAnalyticsQueryOptions = <TData = Awaited<ReturnType<typeof getOwnerAnalytics>>, TError = ErrorType<unknown>>(params: GetOwnerAnalyticsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getOwnerAnalytics>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetOwnerAnalyticsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getOwnerAnalytics>>> = ({ signal }) => getOwnerAnalytics(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getOwnerAnalytics>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetOwnerAnalyticsQueryResult = NonNullable<Awaited<ReturnType<typeof getOwnerAnalytics>>>
+export type GetOwnerAnalyticsQueryError = ErrorType<unknown>
+
+
+
+export function useGetOwnerAnalytics<TData = Awaited<ReturnType<typeof getOwnerAnalytics>>, TError = ErrorType<unknown>>(
+ params: GetOwnerAnalyticsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getOwnerAnalytics>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetOwnerAnalyticsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getGetCheckoutConfigUrl = () => {
 
@@ -363,6 +533,478 @@ export function useGetOwnerOrders<TData = Awaited<ReturnType<typeof getOwnerOrde
 
 
 
+
+export const getGetOwnerInventoryUrl = () => {
+
+
+
+
+  return `/api/owner/inventory`
+}
+
+export const getOwnerInventory = async ( options?: Parameters<typeof customFetch>[1]): Promise<OwnerLivestock[]> => {
+
+  return customFetch<OwnerLivestock[]>(getGetOwnerInventoryUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetOwnerInventoryQueryKey = () => {
+    return [
+    `/api/owner/inventory`
+    ] as const;
+    }
+
+
+export const getGetOwnerInventoryQueryOptions = <TData = Awaited<ReturnType<typeof getOwnerInventory>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getOwnerInventory>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetOwnerInventoryQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getOwnerInventory>>> = ({ signal }) => getOwnerInventory({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getOwnerInventory>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetOwnerInventoryQueryResult = NonNullable<Awaited<ReturnType<typeof getOwnerInventory>>>
+export type GetOwnerInventoryQueryError = ErrorType<unknown>
+
+
+
+export function useGetOwnerInventory<TData = Awaited<ReturnType<typeof getOwnerInventory>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getOwnerInventory>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetOwnerInventoryQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateOwnerLivestockUrl = () => {
+
+
+
+
+  return `/api/owner/inventory`
+}
+
+export const createOwnerLivestock = async (livestockInput: LivestockInput, options?: Parameters<typeof customFetch>[1]): Promise<OwnerLivestock> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<OwnerLivestock>(getCreateOwnerLivestockUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(livestockInput)
+  }
+);}
+
+
+
+
+
+export const getCreateOwnerLivestockMutationKey = () => ['createOwnerLivestock'] as const;
+
+export const getCreateOwnerLivestockMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createOwnerLivestock>>, TError,CreateOwnerLivestockMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createOwnerLivestock>>, TError,CreateOwnerLivestockMutationVariables, TContext> => {
+
+const mutationKey = getCreateOwnerLivestockMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createOwnerLivestock>>, CreateOwnerLivestockMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  createOwnerLivestock(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateOwnerLivestockMutationResult = NonNullable<Awaited<ReturnType<typeof createOwnerLivestock>>>
+    export type CreateOwnerLivestockMutationBody = BodyType<LivestockInput>
+    export type CreateOwnerLivestockMutationError = ErrorType<unknown>
+    export type CreateOwnerLivestockMutationVariables = {data: BodyType<LivestockInput>}
+
+    export const useCreateOwnerLivestock = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createOwnerLivestock>>, TError,CreateOwnerLivestockMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createOwnerLivestock>>,
+        TError,
+        CreateOwnerLivestockMutationVariables,
+        TContext
+      > => {
+      return useMutation(getCreateOwnerLivestockMutationOptions(options));
+    }
+
+export const getUpdateOwnerLivestockUrl = (id: number,) => {
+
+
+
+
+  return `/api/owner/inventory/${id}`
+}
+
+export const updateOwnerLivestock = async (id: number,
+    livestockUpdate: LivestockUpdate, options?: Parameters<typeof customFetch>[1]): Promise<OwnerLivestock> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<OwnerLivestock>(getUpdateOwnerLivestockUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(livestockUpdate)
+  }
+);}
+
+
+
+
+
+export const getUpdateOwnerLivestockMutationKey = () => ['updateOwnerLivestock'] as const;
+
+export const getUpdateOwnerLivestockMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateOwnerLivestock>>, TError,UpdateOwnerLivestockMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateOwnerLivestock>>, TError,UpdateOwnerLivestockMutationVariables, TContext> => {
+
+const mutationKey = getUpdateOwnerLivestockMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateOwnerLivestock>>, UpdateOwnerLivestockMutationVariables> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  updateOwnerLivestock(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateOwnerLivestockMutationResult = NonNullable<Awaited<ReturnType<typeof updateOwnerLivestock>>>
+    export type UpdateOwnerLivestockMutationBody = BodyType<LivestockUpdate>
+    export type UpdateOwnerLivestockMutationError = ErrorType<unknown>
+    export type UpdateOwnerLivestockMutationVariables = {id: number;data: BodyType<LivestockUpdate>}
+
+    export const useUpdateOwnerLivestock = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateOwnerLivestock>>, TError,UpdateOwnerLivestockMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateOwnerLivestock>>,
+        TError,
+        UpdateOwnerLivestockMutationVariables,
+        TContext
+      > => {
+      return useMutation(getUpdateOwnerLivestockMutationOptions(options));
+    }
+
+export const getArchiveOwnerLivestockUrl = (id: number,) => {
+
+
+
+
+  return `/api/owner/inventory/${id}`
+}
+
+export const archiveOwnerLivestock = async (id: number,
+    livestockArchive: LivestockArchive, options?: Parameters<typeof customFetch>[1]): Promise<OwnerLivestock> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<OwnerLivestock>(getArchiveOwnerLivestockUrl(id),
+  {
+    ...options,
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(livestockArchive)
+  }
+);}
+
+
+
+
+
+export const getArchiveOwnerLivestockMutationKey = () => ['archiveOwnerLivestock'] as const;
+
+export const getArchiveOwnerLivestockMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof archiveOwnerLivestock>>, TError,ArchiveOwnerLivestockMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof archiveOwnerLivestock>>, TError,ArchiveOwnerLivestockMutationVariables, TContext> => {
+
+const mutationKey = getArchiveOwnerLivestockMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof archiveOwnerLivestock>>, ArchiveOwnerLivestockMutationVariables> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  archiveOwnerLivestock(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ArchiveOwnerLivestockMutationResult = NonNullable<Awaited<ReturnType<typeof archiveOwnerLivestock>>>
+    export type ArchiveOwnerLivestockMutationBody = BodyType<LivestockArchive>
+    export type ArchiveOwnerLivestockMutationError = ErrorType<unknown>
+    export type ArchiveOwnerLivestockMutationVariables = {id: number;data: BodyType<LivestockArchive>}
+
+    export const useArchiveOwnerLivestock = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof archiveOwnerLivestock>>, TError,ArchiveOwnerLivestockMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof archiveOwnerLivestock>>,
+        TError,
+        ArchiveOwnerLivestockMutationVariables,
+        TContext
+      > => {
+      return useMutation(getArchiveOwnerLivestockMutationOptions(options));
+    }
+
+export const getActOnOwnerOrderUrl = (id: string,) => {
+
+
+
+
+  return `/api/owner/orders/${id}/action`
+}
+
+export const actOnOwnerOrder = async (id: string,
+    orderAction: OrderAction, options?: Parameters<typeof customFetch>[1]): Promise<OrderReceipt> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<OrderReceipt>(getActOnOwnerOrderUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(orderAction)
+  }
+);}
+
+
+
+
+
+export const getActOnOwnerOrderMutationKey = () => ['actOnOwnerOrder'] as const;
+
+export const getActOnOwnerOrderMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof actOnOwnerOrder>>, TError,ActOnOwnerOrderMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof actOnOwnerOrder>>, TError,ActOnOwnerOrderMutationVariables, TContext> => {
+
+const mutationKey = getActOnOwnerOrderMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof actOnOwnerOrder>>, ActOnOwnerOrderMutationVariables> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  actOnOwnerOrder(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ActOnOwnerOrderMutationResult = NonNullable<Awaited<ReturnType<typeof actOnOwnerOrder>>>
+    export type ActOnOwnerOrderMutationBody = BodyType<OrderAction>
+    export type ActOnOwnerOrderMutationError = ErrorType<unknown>
+    export type ActOnOwnerOrderMutationVariables = {id: string;data: BodyType<OrderAction>}
+
+    export const useActOnOwnerOrder = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof actOnOwnerOrder>>, TError,ActOnOwnerOrderMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof actOnOwnerOrder>>,
+        TError,
+        ActOnOwnerOrderMutationVariables,
+        TContext
+      > => {
+      return useMutation(getActOnOwnerOrderMutationOptions(options));
+    }
+
+export const getUploadOwnerImageUrl = () => {
+
+
+
+
+  return `/api/owner/images`
+}
+
+export const uploadOwnerImage = async (imageInput: ImageInput, options?: Parameters<typeof customFetch>[1]): Promise<ImageUpload> => {
+    const formData = new FormData();
+formData.append(`file`, imageInput.file);
+
+  return customFetch<ImageUpload>(getUploadOwnerImageUrl(),
+  {
+    ...options,
+    method: 'POST'
+    ,
+    body: formData
+  }
+);}
+
+
+
+
+
+export const getUploadOwnerImageMutationKey = () => ['uploadOwnerImage'] as const;
+
+export const getUploadOwnerImageMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof uploadOwnerImage>>, TError,UploadOwnerImageMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof uploadOwnerImage>>, TError,UploadOwnerImageMutationVariables, TContext> => {
+
+const mutationKey = getUploadOwnerImageMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof uploadOwnerImage>>, UploadOwnerImageMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  uploadOwnerImage(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UploadOwnerImageMutationResult = NonNullable<Awaited<ReturnType<typeof uploadOwnerImage>>>
+    export type UploadOwnerImageMutationBody = BodyType<ImageInput>
+    export type UploadOwnerImageMutationError = ErrorType<unknown>
+    export type UploadOwnerImageMutationVariables = {data: BodyType<ImageInput>}
+
+    export const useUploadOwnerImage = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof uploadOwnerImage>>, TError,UploadOwnerImageMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof uploadOwnerImage>>,
+        TError,
+        UploadOwnerImageMutationVariables,
+        TContext
+      > => {
+      return useMutation(getUploadOwnerImageMutationOptions(options));
+    }
 
 export const getReceiveOxapayCallbackUrl = () => {
 

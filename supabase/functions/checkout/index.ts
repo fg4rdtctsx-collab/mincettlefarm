@@ -1,12 +1,15 @@
 import { Buffer } from 'node:buffer';
-import { db, checkoutInventory, checkoutOrders, rateLimitTable } from '@workspace/db';
+import { db, checkoutInventory, checkoutOrders, rateLimitTable, analyticsPrefix } from '@workspace/db';
 import { eq, desc, sql } from 'drizzle-orm';
 import {
   CheckoutError, CreateOrderBody, applyPayment, checkoutAvailable, checkoutIsSandbox,
   createSandboxOrder, readPrivateOrder, receipt, reconcile,
   reconcileAbandonedOrders, seedSandboxInventory, oxapay, verifySignature,
   safeEqual, sha256,
+  ownerInventory, publicInventory, createLivestock, updateLivestock, archiveLivestock, ownerOrderAction, ownerAnalytics,
+  CreateOwnerLivestockBody, UpdateOwnerLivestockBody, ArchiveOwnerLivestockBody, ActOnOwnerOrderBody, RecordVisitBody,
 } from './core.generated.js';
+import { uploadLivestockImage } from './owner-upload.ts';
 
 let seeded: Promise<void> | null = null;
 const initialize = () => seeded ??= seedSandboxInventory().catch((error: unknown) => { seeded = null; throw error; });
@@ -19,7 +22,7 @@ function allowedOrigin(): string | null {
 function json(data: unknown, status = 200) {
   return Response.json(data, { status, headers: privateHeaders });
 }
-async function rawBody(req: Request) {
+async function rawBody(req: Request, maximum = 65536) {
   const reader = req.body?.getReader();
   if (!reader) return new Uint8Array();
   const chunks: Uint8Array[] = [];
@@ -28,18 +31,18 @@ async function rawBody(req: Request) {
     const { value, done } = await reader.read();
     if (done) break;
     size += value.length;
-    if (size > 65536) { await reader.cancel(); throw new CheckoutError(413, 'Request is too large.'); }
+    if (size > maximum) { await reader.cancel(); throw new CheckoutError(413, 'Request is too large.'); }
     chunks.push(value);
   }
   return Buffer.concat(chunks.map(c => Buffer.from(c)));
 }
-async function throttle(req: Request) {
+async function throttle(req: Request, scope = 'checkout', clientLimit = 15, globalLimit = 150) {
   // The global bucket also bounds abuse when client address headers are absent
   // or vary. Both counters are persistent across edge instances.
   const address = req.headers.get('x-forwarded-for')?.split(',')[0].trim() || 'unknown';
   const identity = sha256(address);
   const table = sql.identifier(rateLimitTable);
-  for (const [key, maximum] of [[`ip:${identity}`, 15], ['global', 150]] as const) {
+  for (const [key, maximum] of [[`${scope}:ip:${identity}`, clientLimit], [`${scope}:global`, globalLimit]] as const) {
     const rows = await db.execute(sql`
       insert into public.${table} (key, window_start, requests)
       values (${key}, now(), 1)
@@ -65,11 +68,67 @@ async function ownerId(req: Request) {
   const user = await response.json();
   const owners = (Deno.env.get('OWNER_SUPABASE_USER_IDS') || '').split(',').map(s => s.trim()).filter(Boolean);
   if (typeof user.id !== 'string' || !owners.includes(user.id)) throw new CheckoutError(403, 'Owner access has not been approved for this account. Signing up does not grant owner access.');
+  if (!user.email_confirmed_at) throw new CheckoutError(403, 'Verify the approved owner account before signing in.');
   return user.id;
 }
 async function handle(req: Request): Promise<Response> {
   const url = new URL(req.url);
   const path = url.pathname.replace(/^\/(?:functions\/v1\/)?checkout(?=\/|$)/, '');
+  if (path.startsWith('/api/owner/')) {
+    const owner = await ownerId(req);
+    if (path === '/api/owner/orders' && req.method === 'GET') {
+      const orders = await db.select().from(checkoutOrders).orderBy(desc(checkoutOrders.createdAt)).limit(200);
+      return json(orders.map(o => ({ order: receipt(o), buyer: o.buyer })));
+    }
+    if (path === '/api/owner/analytics' && req.method === 'GET') return json(await ownerAnalytics(url.searchParams.get('period') || 'daily', url.searchParams.get('month') ?? undefined, url.searchParams.get('year') ?? undefined));
+    if (path === '/api/owner/inventory' && req.method === 'GET') return json(await ownerInventory());
+    if (path === '/api/owner/images' && req.method === 'POST') {
+      await throttle(req, 'owner-upload', 60, 200);
+      const bytes = await rawBody(req, 5 * 1024 * 1024 + 65536);
+      return json(await uploadLivestockImage(req, bytes, owner), 201);
+    }
+    if (['POST', 'PATCH', 'DELETE'].includes(req.method)) {
+      let data;
+      try { data = JSON.parse(Buffer.from(await rawBody(req)).toString('utf8')); }
+      catch (e) { if (e instanceof CheckoutError) throw e; throw new CheckoutError(400, 'Invalid admin request.'); }
+      if (path === '/api/owner/inventory' && req.method === 'POST') {
+        const parsed = CreateOwnerLivestockBody.safeParse(data);
+        if (!parsed.success) throw new CheckoutError(400, 'Check the livestock name, price, stock, category and photos.');
+        return json(await createLivestock(parsed.data), 201);
+      }
+      const animal = /^\/api\/owner\/inventory\/([1-9]\d*)$/.exec(path);
+      if (animal && req.method === 'PATCH') {
+        const parsed = UpdateOwnerLivestockBody.safeParse(data);
+        if (!parsed.success) throw new CheckoutError(400, 'Check the livestock details and version before saving.');
+        return json(await updateLivestock(Number(animal[1]), parsed.data));
+      }
+      if (animal && req.method === 'DELETE') {
+        const parsed = ArchiveOwnerLivestockBody.safeParse(data);
+        if (!parsed.success) throw new CheckoutError(400, 'Refresh the livestock listing before archiving.');
+        return json(await archiveLivestock(Number(animal[1]), parsed.data.version));
+      }
+      const action = /^\/api\/owner\/orders\/([a-f0-9-]{36})\/action$/.exec(path);
+      if (action && req.method === 'POST') {
+        const parsed = ActOnOwnerOrderBody.safeParse(data);
+        if (!parsed.success) throw new CheckoutError(400, 'Invalid order action.');
+        return json(await ownerOrderAction(action[1], parsed.data.action));
+      }
+    }
+    return json({ error: 'Admin route not found.' }, 404);
+  }
+  if (path === '/api/visits' && req.method === 'POST') {
+    await throttle(req, 'visits', 150, 10000);
+    let body;
+    try { body = JSON.parse(Buffer.from(await rawBody(req)).toString('utf8')); }
+    catch (e) { if (e instanceof CheckoutError) throw e; throw new CheckoutError(400, 'Invalid analytics request.'); }
+    const parsed = RecordVisitBody.safeParse(body);
+    if (!parsed.success) throw new CheckoutError(400, 'Invalid anonymous page view.');
+    const v = parsed.data;
+    if (!/^\/(?:shop|about|contact|faq|services|cart|checkout|wishlist|compare|product\/[a-z0-9-]+|product-category\/[a-z0-9-]+)?$/.test(v.path)) throw new CheckoutError(400, 'This route is excluded from visitor tracking.');
+    const referrer = v.referrer && /^[a-z0-9.-]+$/i.test(v.referrer) ? v.referrer.toLowerCase() : '';
+    await db.execute(sql`insert into public.${sql.identifier(`${analyticsPrefix}_visits`)}(event_id,session_id,path,referrer) values(${v.eventId}::uuid,${v.sessionId}::uuid,${v.path},${referrer}) on conflict(event_id) do nothing`);
+    return json({ status: 'ok' });
+  }
   if (path === '/api/healthz' && req.method === 'GET') return json({ status: 'ok' });
   if (path === '/api/internal/reconcile' && req.method === 'POST') {
     const expected = Deno.env.get('MCF_RECONCILE_SECRET');
@@ -95,27 +154,23 @@ async function handle(req: Request): Promise<Response> {
     await applyPayment(order.id, info);
     return new Response('ok', { headers: { ...privateHeaders, 'Content-Type': 'text/plain' } });
   }
-  if (path === '/api/owner/orders' && req.method === 'GET') {
-    await ownerId(req);
-    const orders = await db.select().from(checkoutOrders).orderBy(desc(checkoutOrders.createdAt)).limit(200);
-    return json(orders.map(o => ({ order: receipt(o), buyer: o.buyer })));
-  }
   if (path === '/api/checkout/config' && req.method === 'GET') {
     await initialize();
-    const products = await db.select().from(checkoutInventory);
+    const products = await publicInventory();
     // Old cached pages explicitly describe payments as sandbox-only. Do not let
     // those pages issue real invoices during the frontend release transition.
     const compatible = checkoutIsSandbox() || req.headers.get('x-mcf-checkout-client') === 'live-v1';
     const available = checkoutAvailable() && compatible;
     return json({
       available, sandbox: checkoutIsSandbox(),
+      bankAvailable: compatible && Boolean(allowedOrigin() && Deno.env.get('SESSION_SECRET')),
       message: !compatible ? 'Please refresh this page after the checkout update has been published.'
         : available
         ? (checkoutIsSandbox()
           ? 'Sandbox test checkout only. Do not send real funds. Displayed stock is artificial test inventory.'
           : 'Pay securely through OxaPay. Prices and availability are verified before your invoice is created.')
         : 'Crypto checkout is unavailable. Payment configuration must be completed.',
-      products: products.map(p => ({ id: p.id, name: p.name, price: p.priceCents / 100, available: p.available })),
+      products,
     });
   }
   if (path === '/api/orders' && req.method === 'POST') {
@@ -152,7 +207,7 @@ Deno.serve(async req => {
   if (origin && origin !== allowed) return json({ error: 'Origin is not allowed.' }, 403);
   const cors: Record<string, string> = origin && allowed ? {
     'Access-Control-Allow-Origin': allowed, 'Vary': 'Origin',
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
     'Access-Control-Allow-Headers': 'authorization, content-type, x-mcf-checkout-client',
     'Access-Control-Max-Age': '600',
   } : {};

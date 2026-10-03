@@ -9,6 +9,7 @@ import type { CatalogItem } from './catalogItem';
 
 export interface CheckoutConfig {
   available: boolean;
+  bankAvailable?: boolean;
   sandbox: boolean;
   message: string;
   products: CatalogItem[];

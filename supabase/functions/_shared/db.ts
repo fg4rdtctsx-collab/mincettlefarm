@@ -11,6 +11,9 @@ export const rateLimitTable = `${prefix}_rate_limits`;
 export const checkoutInventory = pgTable(`${prefix}_inventory`, {
   id: integer('id').primaryKey(), name: text('name').notNull(),
   priceCents: integer('price_cents').notNull(), available: integer('available').notNull(),
+  metadata: jsonb('metadata').notNull().default({}),
+  active: boolean('active').notNull().default(true),
+  version: integer('version').notNull().default(0),
 });
 export const checkoutOrders = pgTable(`${prefix}_orders`, {
   id: text('id').primaryKey(), idempotencyKey: text('idempotency_key').notNull().unique(),
@@ -23,6 +26,9 @@ export const checkoutOrders = pgTable(`${prefix}_orders`, {
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   checkedAt: timestamp('checked_at', { withTimezone: true }),
+  paymentMethod: text('payment_method').notNull().default('crypto'),
+  fulfilledAt: timestamp('fulfilled_at', { withTimezone: true }),
+  paidAt: timestamp('paid_at', { withTimezone: true }),
 });
 const connectionString = Deno.env.get('CHECKOUT_DATABASE_URL') || Deno.env.get('SUPABASE_DB_URL');
 if (!connectionString) throw new Error('Supabase database configuration is missing.');
@@ -32,3 +38,4 @@ const client = postgres(connectionString, {
   ssl: { rejectUnauthorized: true, ca: supabaseRootCA },
 });
 export const db = drizzle(client);
+export const analyticsPrefix = prefix;

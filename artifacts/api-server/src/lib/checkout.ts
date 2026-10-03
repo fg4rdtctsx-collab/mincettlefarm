@@ -53,10 +53,16 @@ export async function seedSandboxInventory() {
   if (rows.length) await db.insert(checkoutInventory).values(rows).onConflictDoNothing();
 }
 export function receipt(o: CheckoutOrder): OrderReceipt {
+  const bankEmailUrl = o.paymentMethod === "bank" ? `mailto:salesminicattlefarm@gmail.com?${new URLSearchParams({
+    subject: `Bank transfer arrangement — Mini Cattle Farm order ${o.id}`,
+    body: `Hello Mini Cattle Farm,\n\nPlease confirm availability and provide bank transfer instructions for order ${o.id}.\n\nName: ${o.buyer.name}\nEmail: ${o.buyer.email}\nPhone: ${o.buyer.phone}\n\n${o.lines.map(l => `${l.name} × ${l.qty}: $${(l.unitPrice * l.qty).toFixed(2)}`).join("\n")}\nTotal: $${(o.totalCents / 100).toFixed(2)} USD\n\nI understand that this request is not a payment confirmation or stock reservation.`,
+  }).toString().replace(/\+/g, "%20")}` : null;
   return {
     id: o.id, status: o.status, total: o.totalCents / 100, currency: "USD", sandbox: checkoutIsSandbox(),
     lines: o.lines, paymentUrl: o.paymentUrl, trackId: o.trackId,
     expiresAt: o.expiresAt.toISOString(), createdAt: o.createdAt.toISOString(), message: o.message,
+    paymentMethod: o.paymentMethod, bankEmailUrl,
+    fulfilledAt: o.fulfilledAt?.toISOString() ?? null, paidAt: o.paidAt?.toISOString() ?? null,
   };
 }
 export async function readPrivateOrder(id: string, token: string) {
@@ -68,10 +74,13 @@ function canonical(input: OrderInput) {
   return {
     buyer: { name: input.buyer.name.trim(), email: input.buyer.email.trim().toLowerCase(), phone: input.buyer.phone.trim() },
     lines: [...input.lines].sort((a, b) => a.id - b.id),
+    // Preserve old crypto fingerprints so retries of existing invoices remain safe.
+    ...(input.paymentMethod === "bank" ? { paymentMethod: "bank" } : {}),
   };
 }
 export async function createSandboxOrder(input: OrderInput) {
-  if (!checkoutAvailable()) throw new CheckoutError(503, "Checkout is unavailable. Payment configuration must be completed.");
+  const bank = input.paymentMethod === "bank";
+  if (bank ? !sandboxOrigin() || !process.env.SESSION_SECRET : !checkoutAvailable()) throw new CheckoutError(503, "Checkout is unavailable. Payment configuration must be completed.");
   const clean = canonical(input);
   if (clean.buyer.name.length < 2 || clean.buyer.phone.length < 5 || new Set(clean.lines.map(l => l.id)).size !== clean.lines.length) {
     throw new CheckoutError(400, "Provide valid buyer details and one line per product.");
@@ -90,18 +99,21 @@ export async function createSandboxOrder(input: OrderInput) {
     let totalCents = 0;
     for (const line of clean.lines) {
       const [p] = await tx.select().from(checkoutInventory).where(eq(checkoutInventory.id, line.id)).for("update");
-      if (!p || p.priceCents <= 0 || p.available < line.qty) throw new CheckoutError(409, "An item has insufficient available stock. Edit your cart.");
-      await tx.update(checkoutInventory).set({ available: p.available - line.qty }).where(eq(checkoutInventory.id, p.id));
+      if (!p || !p.active || p.priceCents <= 0) throw new CheckoutError(409, "An item is no longer listed. Edit your cart.");
+      if (!bank && p.available < line.qty) throw new CheckoutError(409, `${p.name} is sold out or temporarily reserved by another checkout. Please contact the farm or edit your cart.`);
+      if (!bank) await tx.update(checkoutInventory).set({ available: p.available - line.qty }).where(eq(checkoutInventory.id, p.id));
       lines.push({ id: p.id, name: p.name, qty: line.qty, unitPrice: p.priceCents / 100 });
       totalCents += p.priceCents * line.qty;
     }
     const [order] = await tx.insert(checkoutOrders).values({
       id, idempotencyKey: input.idempotencyKey, fingerprint, accessHash: sha256(accessToken(id)),
       buyer: clean.buyer, lines, totalCents, expiresAt: new Date(Date.now() + 30 * 60000),
+      paymentMethod: bank ? "bank" : "crypto",
+      ...(bank ? { status: "pending" as const, released: true, message: "Bank transfer request recorded. Email salesminicattlefarm@gmail.com to confirm availability and arrange payment. No payment is confirmed and no stock is reserved. Bank confirmation may take longer during busy periods." } : {}),
     }).returning();
     return { order, fresh: true };
   });
-  if (!created.fresh) return { order: receipt(created.order), accessToken: accessToken(created.order.id) };
+  if (!created.fresh || bank) return { order: receipt(created.order), accessToken: accessToken(created.order.id) };
   const origin = sandboxOrigin()!;
   try {
     const invoice = await oxapay<Invoice>("invoice", {
@@ -144,7 +156,7 @@ export async function createSandboxOrder(input: OrderInput) {
 }
 
 export function validatePayment(order: CheckoutOrder, info: PaymentInfo): void {
-  if (String(info.order_id) !== order.id || (order.trackId && String(info.track_id) !== order.trackId) ||
+  if (order.paymentMethod === "bank" || String(info.order_id) !== order.id || (order.trackId && String(info.track_id) !== order.trackId) ||
     !info.track_id || info.type !== "invoice" || info.currency !== "USD" ||
     !Number.isFinite(Number(info.amount)) || Math.abs(Number(info.amount) * 100 - order.totalCents) > 0.001) {
     throw new CheckoutError(409, "Invoice association, amount or currency does not match the order.");
@@ -181,6 +193,7 @@ export async function applyPayment(id: string, info: PaymentInfo) {
     await tx.update(checkoutOrders).set({
       trackId: String(info.track_id), status: next, released: o.released || release,
       message: messages[next], checkedAt: new Date(),
+      ...(next === "paid" ? { paidAt: new Date() } : {}),
     }).where(eq(checkoutOrders.id, id));
   });
 }

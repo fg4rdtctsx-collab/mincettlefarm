@@ -14,10 +14,17 @@ export interface CatalogItem {
   name: string;
   price: number;
   available: number;
+  reserved?: number;
+  active?: boolean;
+  slug?: string;
+  category?: string;
+  description?: string;
+  images?: string[];
 }
 
 export interface CheckoutConfig {
   available: boolean;
+  bankAvailable?: boolean;
   sandbox: boolean;
   message: string;
   products: CatalogItem[];
@@ -48,6 +55,14 @@ export interface Buyer {
   phone: string;
 }
 
+export type OrderInputPaymentMethod = typeof OrderInputPaymentMethod[keyof typeof OrderInputPaymentMethod];
+
+
+export const OrderInputPaymentMethod = {
+  crypto: 'crypto',
+  bank: 'bank',
+} as const;
+
 export interface OrderInput {
   buyer: Buyer;
   /**
@@ -56,6 +71,7 @@ export interface OrderInput {
      */
   lines: OrderLineInput[];
   idempotencyKey: string;
+  paymentMethod?: OrderInputPaymentMethod;
 }
 
 export interface OrderLine {
@@ -78,6 +94,14 @@ export const OrderReceiptStatus = {
   review: 'review',
 } as const;
 
+export type OrderReceiptPaymentMethod = typeof OrderReceiptPaymentMethod[keyof typeof OrderReceiptPaymentMethod];
+
+
+export const OrderReceiptPaymentMethod = {
+  crypto: 'crypto',
+  bank: 'bank',
+} as const;
+
 export interface OrderReceipt {
   id: string;
   status: OrderReceiptStatus;
@@ -91,7 +115,129 @@ export interface OrderReceipt {
   trackId: string | null;
   expiresAt: string;
   createdAt: string;
+  /** @nullable */
+  paidAt?: string | null;
   message: string;
+  paymentMethod?: OrderReceiptPaymentMethod;
+  /** @nullable */
+  bankEmailUrl?: string | null;
+  /** @nullable */
+  fulfilledAt?: string | null;
+}
+
+export type OwnerLivestock = CatalogItem & {
+  stock: number;
+  reserved: number;
+  active: boolean;
+  version: number;
+  category: string;
+  description: string;
+  images: string[];
+  slug: string;
+};
+
+export interface LivestockInput {
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  name: string;
+  active?: boolean;
+  /**
+     * @minimum 0.01
+     * @maximum 1000000
+     */
+  price: number;
+  /**
+     * @minimum 0
+     * @maximum 1000
+     */
+  stock: number;
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  category: string;
+  /** @maxLength 10000 */
+  description: string;
+  /**
+     * @maxItems 8
+     * @items.maxLength 2000
+     */
+  images: string[];
+}
+
+export type LivestockUpdate = LivestockInput & {
+  /** @minimum 0 */
+  version: number;
+  active: boolean;
+  /** @minimum 0 */
+  expectedStock: number;
+};
+
+export interface LivestockArchive {
+  /** @minimum 0 */
+  version: number;
+}
+
+export type OrderActionAction = typeof OrderActionAction[keyof typeof OrderActionAction];
+
+
+export const OrderActionAction = {
+  confirm_bank: 'confirm_bank',
+  cancel_bank: 'cancel_bank',
+  fulfill: 'fulfill',
+} as const;
+
+export interface OrderAction {
+  action: OrderActionAction;
+}
+
+export interface ImageInput {
+  file: Blob;
+}
+
+export interface ImageUpload {
+  url: string;
+}
+
+export interface VisitInput {
+  eventId: string;
+  sessionId: string;
+  /** @maxLength 200 */
+  path: string;
+  /** @maxLength 200 */
+  referrer?: string;
+}
+
+export interface AnalyticsBucket {
+  bucket: string;
+  revenue: number;
+  paidOrders: number;
+  visitors: number;
+  pageViews: number;
+}
+
+export interface AnalyticsPage {
+  path: string;
+  views: number;
+}
+
+export type OwnerAnalyticsPeriod = typeof OwnerAnalyticsPeriod[keyof typeof OwnerAnalyticsPeriod];
+
+
+export const OwnerAnalyticsPeriod = {
+  daily: 'daily',
+  monthly: 'monthly',
+} as const;
+
+export interface OwnerAnalytics {
+  period: OwnerAnalyticsPeriod;
+  timezone: string;
+  trackingStartedAt: string;
+  totals: AnalyticsBucket;
+  buckets: AnalyticsBucket[];
+  topPages: AnalyticsPage[];
 }
 
 export interface OrderSession {
@@ -112,6 +258,27 @@ export interface HealthStatus {
  * Request cannot be processed
  */
 export type ErrorResponse = ApiFailure;
+
+export type GetOwnerAnalyticsParams = {
+period: GetOwnerAnalyticsPeriod;
+/**
+ * @pattern ^\d{4}-\d{2}$
+ */
+month?: string;
+/**
+ * @minimum 2020
+ * @maximum 2100
+ */
+year?: number;
+};
+
+export type GetOwnerAnalyticsPeriod = typeof GetOwnerAnalyticsPeriod[keyof typeof GetOwnerAnalyticsPeriod];
+
+
+export const GetOwnerAnalyticsPeriod = {
+  daily: 'daily',
+  monthly: 'monthly',
+} as const;
 
 export type GetOrderParams = {
 token: string;

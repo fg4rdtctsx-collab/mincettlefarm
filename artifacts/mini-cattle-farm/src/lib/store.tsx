@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import raw from '@/data/catalog.json';
+import { useGetCheckoutConfig, getGetCheckoutConfigQueryKey } from '@workspace/api-client-react';
 
 export type Category = { id: number; name: string; slug: string };
 export type Product = {
@@ -14,6 +15,7 @@ export type Product = {
   inStock: boolean;
   categories: Category[];
   images: string[];
+  active?: boolean;
 };
 type Raw = { products: Product[]; homeIds: number[]; secondaryIds: number[]; logo: string; hero: string };
 const catalog = raw as unknown as Raw;
@@ -24,7 +26,7 @@ export const heroPath = catalog.hero;
 export const homeProducts = catalog.homeIds.map(id => products.find(p => p.id === id)).filter(Boolean) as Product[];
 export const secondaryProducts = catalog.secondaryIds.map(id => products.find(p => p.id === id)).filter(Boolean) as Product[];
 
-export const asset = (p: string) => `${import.meta.env.BASE_URL}${p.replace(/^\//, '')}`;
+export const asset = (p: string | undefined) => p?.startsWith('https://') ? p : `${import.meta.env.BASE_URL}${(p || logoPath).replace(/^\//, '')}`;
 
 export const categories: Category[] = (() => {
   const m = new Map<string, Category>();
@@ -64,6 +66,7 @@ function usePersisted<T>(key: string, init: T) {
 }
 
 type Ctx = {
+  products: Product[];
   cart: CartLine[];
   wishlist: number[];
   compare: number[];
@@ -94,29 +97,56 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [compare, setCompare] = usePersisted<number[]>('mcf.compare', []);
   const [drafts, setDrafts] = usePersisted<Record<number, Draft>>('mcf.adminDrafts', {});
   const [notice, setNotice] = useState('');
+  const live = useGetCheckoutConfig({
+    request: { headers: { 'x-mcf-checkout-client': 'live-v1' } },
+    query: { queryKey: getGetCheckoutConfigQueryKey(), staleTime: 10000, refetchInterval: 30000, retry: 1 },
+  });
+  const managed = useMemo(() => new Map(live.data?.products.map(p => [p.id, p]) ?? []), [live.data]);
+  const currentProducts = useMemo(() => {
+    const result = products.map(p => {
+      const row = managed.get(p.id);
+      if (!row) return p;
+      return { ...p, name: row.name, price: row.price, inStock: row.available > 0 && row.active !== false,
+        active: row.active, slug: row.slug || p.slug,
+        description: row.description ?? p.description, shortDescription: row.description ?? p.shortDescription,
+        images: row.images ?? p.images,
+        categories: row.category ? categories.filter(c => c.slug === row.category) : p.categories };
+    });
+    for (const row of managed.values()) if (!products.some(p => p.id === row.id)) result.push({
+      id: row.id, slug: row.slug || `animal-${row.id}`, name: row.name,
+      price: row.price, regularPrice: row.price, currency: 'USD', active: row.active,
+      inStock: row.available > 0 && row.active !== false, description: row.description || '',
+      shortDescription: row.description || '', images: row.images || [],
+      categories: categories.filter(c => c.slug === row.category),
+    });
+    return result;
+  }, [managed]);
 
   const flash = useCallback((m: string) => {
     setNotice(m);
     window.setTimeout(() => setNotice(''), 2600);
   }, []);
 
-  const priceOf = useCallback((p: Product) => drafts[p.id]?.price ?? p.price, [drafts]);
-  const isOnSale = useCallback((p: Product) => drafts[p.id]?.price === undefined && p.regularPrice > p.price, [drafts]);
-  const stockOf = useCallback((p: Product) => drafts[p.id]?.stock, [drafts]);
+  const priceOf = useCallback((p: Product) => managed.get(p.id)?.price ?? drafts[p.id]?.price ?? p.price, [managed, drafts]);
+  const isOnSale = useCallback((p: Product) => p.regularPrice > priceOf(p), [priceOf]);
+  const stockOf = useCallback((p: Product) => managed.get(p.id)?.available ?? drafts[p.id]?.stock, [managed, drafts]);
   const inStock = useCallback(
     (p: Product) => {
+      const liveRow = managed.get(p.id);
+      if (liveRow) return liveRow.active !== false && liveRow.available > 0;
       const s = drafts[p.id]?.stock;
       return s !== undefined ? s > 0 : p.inStock;
     },
-    [drafts],
+    [drafts, managed],
   );
 
   const value = useMemo<Ctx>(() => {
-    const byId = (id: number) => products.find((p) => p.id === id);
+    const byId = (id: number) => currentProducts.find((p) => p.id === id);
     const valid = cart
-      .filter(l => byId(l.id) && inStock(byId(l.id)!) && Number.isFinite(l.qty) && l.qty > 0)
-      .map(l => ({ ...l, qty: Math.min(Math.floor(l.qty), stockOf(byId(l.id)!) ?? Infinity) }));
+      .filter(l => byId(l.id) && Number.isFinite(l.qty) && l.qty > 0)
+      .map(l => ({ ...l, qty: Math.min(10, Math.floor(l.qty)) }));
     return {
+      products: currentProducts,
       cart: valid,
       wishlist,
       compare,
@@ -124,7 +154,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       priceOf,
       textOf: (p, short = false) => {
         const text = short ? p.shortDescription : p.description;
-        return drafts[p.id]?.price === undefined ? text : text.replace(/(\bPrice\s*:\s*)\$[\d,.]+/gi, (_, label) => `${label}${fmt(priceOf(p))}`);
+        return text.replace(/(\bPrice\s*:\s*)\$[\d,.]+/gi, (_, label) => `${label}${fmt(priceOf(p))}`);
       },
       isOnSale,
       stockOf,
@@ -133,7 +163,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       addToCart: (id) => {
         const p = byId(id);
         if (!p || !inStock(p)) return;
-        const max = stockOf(p) ?? Infinity;
+        const max = Math.min(10, stockOf(p) ?? 10);
         setCart((c) => {
           const l = c.find((x) => x.id === id);
           if (l) return c.map((x) => (x.id === id ? { ...x, qty: Math.min(max, x.qty + 1) } : x));
@@ -145,7 +175,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         if (!Number.isFinite(qty)) return;
         const p = byId(id);
         if (!p || !inStock(p)) return;
-        const max = p ? stockOf(p) ?? Infinity : Infinity;
+        const max = Math.min(10, p ? stockOf(p) ?? 10 : 10);
         setCart((c) => c.map((x) => (x.id === id ? { ...x, qty: Math.max(1, Math.min(max, Math.floor(qty))) } : x)));
       },
       removeFromCart: (id) => setCart((c) => c.filter((x) => x.id !== id)),
@@ -171,7 +201,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         }),
       clearDrafts: () => setDrafts({}),
     };
-  }, [cart, wishlist, compare, drafts, notice, priceOf, isOnSale, stockOf, inStock, setCart, setWishlist, setCompare, setDrafts, flash]);
+  }, [cart, wishlist, compare, drafts, notice, priceOf, isOnSale, stockOf, inStock, currentProducts, setCart, setWishlist, setCompare, setDrafts, flash]);
 
   return <StoreCtx.Provider value={value}>{children}</StoreCtx.Provider>;
 }

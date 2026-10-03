@@ -15,6 +15,34 @@ Merging a release pull request into `main` updates the live site.
 
 ## Frontend configuration
 
+### Admin update
+
+The production admin panel is part of the GitHub-hosted frontend at `/admin`.
+Its authentication, authorization, inventory, orders, earnings and anonymous
+traffic data use Supabase. No Replit production hosting is needed.
+
+Deployment order matters: apply the additive admin migration and update the
+Supabase checkout function **before** releasing the new frontend. Existing
+crypto receipts and inventory must never be reseeded.
+
+- Secure owner setup: `node scripts/src/admin-release.mjs --bootstrap-owner`.
+  Requires the managing owner's securely supplied `ADMIN_INITIAL_PASSWORD`
+  (12+ characters). The password is not embedded in frontend builds or logged.
+  Existing accounts' passwords are never silently replaced.
+- After explicit publication approval:
+  `node scripts/src/admin-release.mjs --approved-publish-backend --site-origin=https://minicattlefarm.com`.
+  Creates protected analytics tables and the public livestock photo bucket;
+  uploads remain accessible only through authenticated owner API requests.
+- Build with `pnpm --filter @workspace/mini-cattle-farm run build:pages`;
+  export the approved source and built site using the existing release manifest.
+- Bank requests do not reserve animals and are not paid until the owner verifies
+  actual funds and the confirmation transaction checks available stock.
+- Earnings are confirmed USD sales revenue on the payment-confirmation date
+  in Africa/Lagos, not profit or processor settlement. Sandbox orders are excluded.
+- Traffic counts anonymous browser sessions and page views starting when the
+  tracking update goes live. Private/admin routes, query strings and receipt
+  tokens are excluded; Do Not Track and Global Privacy Control are respected.
+
 Create an ignored `.env.production.local` inside `artifacts/mini-cattle-farm`
 with the selected Supabase project URL and **publishable/anon** browser key.
 Use the variable names in `.env.example`. Never enter a service-role key there.

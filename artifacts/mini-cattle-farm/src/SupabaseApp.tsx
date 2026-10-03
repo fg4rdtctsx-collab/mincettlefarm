@@ -5,8 +5,10 @@ import { Redirect, Route, Switch, Router, useLocation } from 'wouter';
 import { StoreProvider } from '@/lib/store';
 import { supabase, configureSupabaseApi } from '@/lib/supabase';
 import { About, Category, Contact, Faq, Home, NotFound, ProductPage, Services, Shop } from '@/pages/storefront';
-import { AdminPreview, Cart, Compare, Wishlist } from '@/pages/commerce';
-import { Checkout, OrderPage, OwnerOrdersView } from '@/pages/payment';
+import { Cart, Compare, Wishlist } from '@/pages/commerce';
+import { Checkout, OrderPage } from '@/pages/payment';
+import { AdminPage } from '@/pages/admin';
+import { VisitorTracker } from '@/components/visitor-tracker';
 
 const queryClient = new QueryClient();
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, '');
@@ -46,12 +48,12 @@ function SupabaseRoutes() {
     queryClient.clear(); navigate('/');
   };
   const owner = !ready ? <p className="mc-container" role="status">Loading sign-in…</p>
-    : session ? <OwnerOrdersView userId={session.user.id} email={session.user.email ?? ''} onSignOut={logout} provider="Supabase" />
+    : session ? <AdminPage userId={session.user.id} email={session.user.email ?? ''} onSignOut={logout} />
     : <Redirect to="/sign-in" />;
   return (
     <Switch>
-      <Route path="/">{ready && session ? <Redirect to="/owner/orders" /> : <Home />}</Route>
-      <Route path="/sign-in/*?">{session ? <Redirect to="/owner/orders" /> : <OwnerSignIn initialError={authError} />}</Route>
+      <Route path="/" component={Home} />
+      <Route path="/sign-in/*?">{session ? <Redirect to="/admin" /> : <OwnerSignIn initialError={authError} />}</Route>
       <Route path="/sign-up/*?"><Redirect to="/sign-in" /></Route>
       <Route path="/shop" component={Shop} />
       <Route path="/product/:slug">{p => <ProductPage key={p.slug} slug={p.slug} />}</Route>
@@ -63,10 +65,11 @@ function SupabaseRoutes() {
       <Route path="/cart" component={Cart} />
       <Route path="/checkout" component={Checkout} />
       <Route path="/order/:id">{p => <OrderPage key={p.id} id={p.id} />}</Route>
-      <Route path="/owner/orders">{owner}</Route>
+      <Route path="/admin">{owner}</Route>
+      <Route path="/owner/orders"><Redirect to="/admin" /></Route>
       <Route path="/wishlist" component={Wishlist} />
       <Route path="/compare" component={Compare} />
-      <Route path="/admin-preview" component={AdminPreview} />
+      <Route path="/admin-preview"><Redirect to="/admin" /></Route>
       <Route component={NotFound} />
     </Switch>
   );
@@ -87,7 +90,7 @@ function OwnerSignIn({ initialError }: { initialError: string }) {
         try {
           const { error: failure } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
           if (failure) throw failure;
-          setPassword(''); navigate('/owner/orders');
+          setPassword(''); navigate('/admin');
         } catch { setError('Sign-in failed. Check your email and password, and confirm the account is verified.'); }
         finally { setBusy(false); }
       }}>
@@ -105,5 +108,6 @@ function OwnerSignIn({ initialError }: { initialError: string }) {
 }
 
 export default function SupabaseApp() {
-  return <Router base={basePath}><QueryClientProvider client={queryClient}><StoreProvider><SupabaseRoutes /></StoreProvider></QueryClientProvider></Router>;
+  configureSupabaseApi();
+  return <Router base={basePath}><QueryClientProvider client={queryClient}><StoreProvider><VisitorTracker /><SupabaseRoutes /></StoreProvider></QueryClientProvider></Router>;
 }

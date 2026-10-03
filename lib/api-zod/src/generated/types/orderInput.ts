@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { Buyer } from './buyer';
+import type { OrderInputPaymentMethod } from './orderInputPaymentMethod';
 import type { OrderLineInput } from './orderLineInput';
 
 export interface OrderInput {
@@ -16,4 +17,5 @@ export interface OrderInput {
      */
   lines: OrderLineInput[];
   idempotencyKey: string;
+  paymentMethod?: OrderInputPaymentMethod;
 }
