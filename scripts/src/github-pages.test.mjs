@@ -11,6 +11,12 @@ test('keeps private receipt token in the fragment', () => {
 test('supports root custom domains', () => {
   assert.equal(restorePagesRoute('https://farm.example/?__mcf_path=%2Fshop', '/'), '/shop');
 });
+test('restores a custom-domain product deep link without a repository prefix', () => {
+  assert.equal(restorePagesRoute('https://minicattlefarm.com/?__mcf_path=%2Fproduct%2Fcalf', '/'), '/product/calf');
+});
+test('keeps custom-domain receipt access private during route restoration', () => {
+  assert.equal(restorePagesRoute('https://minicattlefarm.com/?__mcf_path=%2Forder%2F123#access=private', '/'), '/order/123#access=private');
+});
 test('rejects external and escaping routes', () => {
   for (const route of ['//evil.example/', '/../outside', '/%2e%2e/outside']) {
     assert.equal(restorePagesRoute(`https://example.github.io/mincettlefarm/?__mcf_path=${encodeURIComponent(route)}`, '/mincettlefarm/'), null);
