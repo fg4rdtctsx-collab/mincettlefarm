@@ -8,7 +8,8 @@ import { accessToken, CheckoutError, oxapay, safeEqual, securePaymentUrl, sha256
 export function sandboxOrigin(): string | null {
   const explicit = process.env.MCF_SANDBOX_PUBLIC_URL;
   if (explicit) {
-    if (process.env.CHECKOUT_SANDBOX_ENABLED !== "true") return null;
+    if (process.env.CHECKOUT_SANDBOX_ENABLED !== "true" && process.env.CHECKOUT_LIVE_ENABLED !== "true") return null;
+    if (process.env.CHECKOUT_SANDBOX_ENABLED === "true" && process.env.CHECKOUT_LIVE_ENABLED === "true") return null;
     try {
       const url = new URL(explicit);
       if (url.protocol !== "https:" || url.username || url.password || url.port || url.search || url.hash ||
@@ -39,8 +40,12 @@ export function sandboxCallbackUrl(): string | null {
   return origin ? `${origin}/api/payments/oxapay/callback` : null;
 }
 export const checkoutAvailable = () => Boolean(sandboxOrigin() && sandboxCallbackUrl() && process.env.OXAPAY_MERCHANT_API_KEY && process.env.SESSION_SECRET);
+export const checkoutIsSandbox = () => process.env.CHECKOUT_LIVE_ENABLED !== "true";
 
 export async function seedSandboxInventory() {
+  // Live inventory is explicitly approved and provisioned separately. Never
+  // turn artificial test quantities into livestock available for purchase.
+  if (!checkoutIsSandbox()) return;
   const rows = catalog.products.map(p => ({
     id: p.id, name: p.name, priceCents: Math.round(p.price * 100),
     available: p.inStock ? 10 : 0, // artificial test stock, NOT real herd quantities
@@ -49,7 +54,7 @@ export async function seedSandboxInventory() {
 }
 export function receipt(o: CheckoutOrder): OrderReceipt {
   return {
-    id: o.id, status: o.status, total: o.totalCents / 100, currency: "USD", sandbox: true,
+    id: o.id, status: o.status, total: o.totalCents / 100, currency: "USD", sandbox: checkoutIsSandbox(),
     lines: o.lines, paymentUrl: o.paymentUrl, trackId: o.trackId,
     expiresAt: o.expiresAt.toISOString(), createdAt: o.createdAt.toISOString(), message: o.message,
   };
@@ -66,7 +71,7 @@ function canonical(input: OrderInput) {
   };
 }
 export async function createSandboxOrder(input: OrderInput) {
-  if (!checkoutAvailable()) throw new CheckoutError(503, "Sandbox checkout is unavailable. Live payments are disabled.");
+  if (!checkoutAvailable()) throw new CheckoutError(503, "Checkout is unavailable. Payment configuration must be completed.");
   const clean = canonical(input);
   if (clean.buyer.name.length < 2 || clean.buyer.phone.length < 5 || new Set(clean.lines.map(l => l.id)).size !== clean.lines.length) {
     throw new CheckoutError(400, "Provide valid buyer details and one line per product.");
@@ -85,7 +90,7 @@ export async function createSandboxOrder(input: OrderInput) {
     let totalCents = 0;
     for (const line of clean.lines) {
       const [p] = await tx.select().from(checkoutInventory).where(eq(checkoutInventory.id, line.id)).for("update");
-      if (!p || p.priceCents <= 0 || p.available < line.qty) throw new CheckoutError(409, "An item has insufficient sandbox test stock. Edit your cart.");
+      if (!p || p.priceCents <= 0 || p.available < line.qty) throw new CheckoutError(409, "An item has insufficient available stock. Edit your cart.");
       await tx.update(checkoutInventory).set({ available: p.available - line.qty }).where(eq(checkoutInventory.id, p.id));
       lines.push({ id: p.id, name: p.name, qty: line.qty, unitPrice: p.priceCents / 100 });
       totalCents += p.priceCents * line.qty;
@@ -104,7 +109,7 @@ export async function createSandboxOrder(input: OrderInput) {
       order_id: id, callback_url: sandboxCallbackUrl()!,
       return_url: `${origin}/order/${id}#access=${accessToken(id)}`,
       // Never live, never change merchant coin/fee/settlement settings implicitly.
-      sandbox: true, description: `Mini Cattle Farm SANDBOX order ${id}`,
+      sandbox: checkoutIsSandbox(), description: `Mini Cattle Farm ${checkoutIsSandbox() ? "SANDBOX " : ""}order ${id}`,
     });
     if (!invoice.track_id || !Number.isFinite(invoice.expired_at)) throw new CheckoutError(502, "OxaPay returned an incomplete invoice.");
     const paymentUrl = securePaymentUrl(invoice.payment_url);
@@ -112,7 +117,9 @@ export async function createSandboxOrder(input: OrderInput) {
       trackId: String(invoice.track_id), paymentUrl, expiresAt: new Date(invoice.expired_at * 1000),
     }).where(eq(checkoutOrders.id, id)).returning();
     // Callback may have arrived before invoice response; never overwrite paid.
-    await db.update(checkoutOrders).set({ status: "pending", message: "Sandbox invoice ready. No real funds or livestock orders are accepted." })
+    await db.update(checkoutOrders).set({ status: "pending", message: checkoutIsSandbox()
+      ? "Sandbox invoice ready. No real funds or livestock orders are accepted."
+      : "Invoice ready. Payment must be confirmed by OxaPay before fulfillment." })
       .where(and(eq(checkoutOrders.id, id), eq(checkoutOrders.status, "creating")));
     const [ready] = await db.select().from(checkoutOrders).where(eq(checkoutOrders.id, updated.id));
     return { order: receipt(ready), accessToken: accessToken(id) };
@@ -126,7 +133,7 @@ export async function createSandboxOrder(input: OrderInput) {
       }
       await tx.update(checkoutOrders).set({
         status: definitive ? "failed" : "review", released: definitive,
-        message: definitive ? "OxaPay rejected this sandbox invoice. No payment was accepted."
+        message: definitive ? "OxaPay rejected this invoice. No payment was accepted."
           : "Invoice creation could not be confirmed. Do not start another payment; retain this receipt for owner review.",
       }).where(eq(checkoutOrders.id, id));
     });
@@ -162,11 +169,13 @@ export async function applyPayment(id: string, info: PaymentInfo) {
       await tx.update(checkoutInventory).set({ available: sql`${checkoutInventory.available} + ${line.qty}` }).where(eq(checkoutInventory.id, line.id));
     }
     const messages = {
-      paid: "Sandbox payment confirmed by OxaPay. This is a test, not a real order for fulfillment.",
+      paid: checkoutIsSandbox()
+        ? "Sandbox payment confirmed by OxaPay. This is a test, not a real order for fulfillment."
+        : "Payment confirmed by OxaPay. The farm will contact you to arrange fulfillment.",
       paying: "OxaPay is awaiting network confirmation. Payment is not confirmed.",
-      pending: "Awaiting sandbox payment. Returning to this page is not proof of payment.",
-      expired: "OxaPay reports this invoice expired. Test stock reservation released.",
-      failed: "OxaPay reports this payment failed. Test stock reservation released.",
+      pending: "Awaiting payment. Returning to this page is not proof of payment.",
+      expired: "OxaPay reports this invoice expired. Stock reservation released.",
+      failed: "OxaPay reports this payment failed. Stock reservation released.",
       review: "A payment arrived after stock was released. Owner review is required; do not fulfill automatically.",
     };
     await tx.update(checkoutOrders).set({

@@ -24,7 +24,7 @@ the current release mirrors it at the root and in `docs/`. A custom-domain site
 must not be built with the repository prefix `/mincettlefarm/`.
 
 Until these values and the Edge Function exist, storefront browsing works but
-sign-in is explicitly unavailable and checkout cannot load.
+sign-in is explicitly unavailable and payment submission is disabled.
 
 ## Backend setup
 
@@ -87,5 +87,36 @@ terminal or a provider-approved transition is verified.
 Keep the source database and hosting intact until row counts, order/inventory
 invariants, private receipts, and callback delivery match on the new system.
 Rollback requires a consistent reservation/order ledger, not simply repointing
-the frontend while both backends accept orders. Publishing never enables live
-payments; all orders here remain unfulfilled sandbox tests.
+the frontend while both backends accept orders.
+
+## Owner-approved live checkout
+
+The owner subsequently requested real checkout and approved the displayed listing
+prices and one animal per in-stock listing. Apply the separate
+`202610030002_live_checkout.sql` migration; never copy artificial sandbox quantities
+or test orders into its tables. Stock is reserved transactionally, and repeated
+activation never overwrites sold or reserved quantities.
+
+Live Edge Functions select only the protected `live_checkout_*` tables. Set
+`CHECKOUT_LIVE_ENABLED=true` and `CHECKOUT_SANDBOX_ENABLED=false` exclusively.
+The existing `MCF_SANDBOX_PUBLIC_URL` and `MCF_SANDBOX_CALLBACK_URL` variable names
+are retained for compatibility but now hold the verified production website and
+function callback URLs. Live OxaPay requests explicitly use `sandbox: false`.
+The original Replit preview remains isolated on its test database.
+
+Run `node scripts/src/prepare-supabase.mjs`, then the explicitly approved,
+project-scoped `node scripts/src/activate-live-checkout.mjs --approved-live`.
+It consumes saved server credentials without printing them, preserves the
+separate reconciliation credential in Vault, and schedules verified reconciliation.
+The public Supabase root CA is included; TLS verification is never disabled.
+
+New checkout pages send `x-mcf-checkout-client: live-v1`. Older cached pages that
+describe payments as test-only cannot create real invoices. This release marker
+is not authentication: order validation, trusted pricing, stock locks, private
+receipt tokens, callback HMAC and canonical OxaPay verification remain mandatory.
+Publish the matching frontend through a reviewed GitHub pull request.
+
+Bank transfer is unavailable until the owner supplies valid bank details.
+No unapproved owner account is granted access. The contact form uses a pre-filled
+email draft because the owner declined a new email-sending connection; visitors
+must finish sending in their own email app.

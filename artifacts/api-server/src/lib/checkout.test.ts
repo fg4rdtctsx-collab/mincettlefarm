@@ -3,7 +3,7 @@ import { createHmac, randomUUID } from "node:crypto";
 import { test } from "node:test";
 import { db, pool, checkoutInventory, checkoutOrders } from "@workspace/db";
 import { eq, sql } from "drizzle-orm";
-import { applyPayment, createSandboxOrder, readPrivateOrder, validatePayment } from "./checkout";
+import { applyPayment, checkoutAvailable, createSandboxOrder, readPrivateOrder, validatePayment, seedSandboxInventory } from "./checkout";
 import { verifySignature, type PaymentInfo } from "./oxapay";
 
 test("HMAC requires exact raw bytes and rejects forged or malformed signatures", () => {
@@ -18,6 +18,7 @@ test("HMAC requires exact raw bytes and rejects forged or malformed signatures",
 
 test("persistent orders: trusted totals, concurrency, private access, transitions and reservation lifecycle", async () => {
   const originalFetch = globalThis.fetch;
+  const savedEnv = Object.fromEntries(['CHECKOUT_LIVE_ENABLED', 'CHECKOUT_SANDBOX_ENABLED', 'MCF_SANDBOX_PUBLIC_URL', 'MCF_SANDBOX_CALLBACK_URL'].map(key => [key, process.env[key]]));
   const made: string[] = [];
   const trackByOrder = new Map<string, string>();
   let invoiceCalls = 0;
@@ -94,8 +95,39 @@ test("persistent orders: trusted totals, concurrency, private access, transition
     made.push(rejected.order.id);
     assert.equal(rejected.order.status, "failed");
     assert.equal((await readPrivateOrder(rejected.order.id, rejected.accessToken)).released, true);
+    // Exercise real-invoice semantics only against mocked OxaPay and the
+    // development test tables. Never create a real invoice during tests.
+    process.env.CHECKOUT_LIVE_ENABLED = 'true';
+    process.env.CHECKOUT_SANDBOX_ENABLED = 'false';
+    process.env.MCF_SANDBOX_PUBLIC_URL = 'https://farm.example';
+    process.env.MCF_SANDBOX_CALLBACK_URL = 'https://api.farm.example/api/payments/oxapay/callback';
+    const [beforeLive] = await db.select().from(checkoutInventory).where(eq(checkoutInventory.id, stock.id));
+    await seedSandboxInventory();
+    const [afterSeed] = await db.select().from(checkoutInventory).where(eq(checkoutInventory.id, stock.id));
+    assert.equal(beforeLive.available, afterSeed.available, 'live mode must not seed artificial stock');
+    globalThis.fetch = async (_url, init) => {
+      const body = JSON.parse(String(init?.body));
+      assert.equal(body.sandbox, false, 'approved live checkout must request an actual invoice');
+      assert.equal(body.amount, stock.priceCents / 100, 'live prices must be server owned');
+      assert.ok(!body.description.includes('SANDBOX'));
+      return new Response(JSON.stringify({ status: 200, data: {
+        track_id: '910000001', payment_url: 'https://pay.oxapay.com/unit-fixture',
+        expired_at: Math.floor(Date.now() / 1000) + 1800,
+      } }), { status: 200 });
+    };
+    const live = await createSandboxOrder(input());
+    made.push(live.order.id);
+    assert.equal(live.order.sandbox, false);
+    assert.equal(live.order.status, 'pending');
+    assert.ok(!live.order.message.includes('Sandbox'));
+    assert.equal((await readPrivateOrder(live.order.id, live.accessToken)).id, live.order.id);
+    process.env.CHECKOUT_SANDBOX_ENABLED = 'true';
+    assert.equal(checkoutAvailable(), false, 'mixed live and sandbox configuration must fail closed');
   } finally {
     globalThis.fetch = originalFetch;
+    for (const [key, value] of Object.entries(savedEnv)) {
+      if (value === undefined) delete process.env[key]; else process.env[key] = value;
+    }
     for (const id of made) await db.transaction(async tx => {
       const [o] = await tx.select().from(checkoutOrders).where(eq(checkoutOrders.id, id)).for("update");
       if (!o) return;

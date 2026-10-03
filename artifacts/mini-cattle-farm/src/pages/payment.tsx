@@ -8,7 +8,7 @@ import {
   type OrderReceipt,
 } from '@workspace/api-client-react';
 import { Layout, PageBanner } from '@/components/shop';
-import { fmt, useStore } from '@/lib/store';
+import { fmt, products, useStore } from '@/lib/store';
 
 const tokenKey = (id: string) => `mcf-order-token-${id}`;
 const errMsg = (e: unknown, fallback: string) => {
@@ -17,6 +17,7 @@ const errMsg = (e: unknown, fallback: string) => {
 };
 const statusOf = (e: unknown) => (e as { status?: number })?.status;
 const SANDBOX_WARN = 'SANDBOX ONLY. DO NOT SEND REAL FUNDS. Sandbox orders are test orders and will not be fulfilled.';
+const liveClient = { headers: { 'x-mcf-checkout-client': 'live-v1' } };
 
 function Warn() {
   return <div className="mc-alert mc-alert-err" role="alert" data-testid="status-sandbox-warning"><strong>{SANDBOX_WARN}</strong></div>;
@@ -25,8 +26,8 @@ function Warn() {
 export function Checkout() {
   const { cart } = useStore();
   const qc = useQueryClient();
-  const config = useGetCheckoutConfig({ query: { queryKey: getGetCheckoutConfigQueryKey() } });
-  const create = useCreateOrder();
+  const config = useGetCheckoutConfig({ query: { queryKey: getGetCheckoutConfigQueryKey() }, request: liveClient });
+  const create = useCreateOrder({ request: liveClient });
   const [buyer, setBuyer] = useState({ name: '', email: '', phone: '' });
   const [method, setMethod] = useState<'crypto' | 'bank'>('crypto');
   const [error, setError] = useState('');
@@ -34,10 +35,11 @@ export function Checkout() {
   const keyRef = useRef<{ sig: string; key: string } | null>(null);
   const lines = useMemo(() => cart.map((l) => ({ id: l.id, qty: l.qty })), [cart]);
   const sig = JSON.stringify({ buyer: { name: buyer.name.trim(), email: buyer.email.trim(), phone: buyer.phone.trim() }, lines });
-  const catalog = config.data?.products ?? [];
+  const sandbox = config.data?.sandbox === true;
+  const catalog = config.data?.products ?? products.map(p => ({ id: p.id, name: p.name, price: p.price, available: 0 }));
   const rows = lines.map((l) => ({ ...l, p: catalog.find((c) => c.id === l.id) }));
   const total = rows.reduce((s, r) => s + (r.p ? r.p.price * r.qty : 0), 0);
-  const problem = rows.find((r) => !r.p || r.p.available < r.qty);
+  const problem = config.data && rows.find((r) => !r.p || r.p.available < r.qty);
   const valid = buyer.name.trim().length >= 2 && /^\S+@\S+\.\S+$/.test(buyer.email.trim()) && buyer.phone.trim().length >= 5;
   const canSubmit = !!config.data?.available && method === 'crypto' && valid && !problem && !submitting && lines.length > 0;
 
@@ -77,17 +79,15 @@ export function Checkout() {
             <p>Your cart is currently empty, so there is nothing to check out.</p>
             <Link href="/shop" className="mc-btn">Return to shop</Link>
           </div>
-        ) : config.isLoading ? (
-          <div aria-busy="true" aria-label="Loading checkout"><div className="mc-skel" /><div className="mc-skel" /><div className="mc-skel" /></div>
-        ) : config.isError || !config.data ? (
-          <div className="mc-alert mc-alert-err" role="alert" data-testid="status-config-error">
-            Checkout could not be loaded. <button type="button" className="mc-btn mc-btn-sm" onClick={() => config.refetch()}>Retry</button>
-          </div>
         ) : (
           <form className="mc-cart" onSubmit={submit} noValidate>
             <div>
-              <Warn />
-              <div className="mc-alert" role="note" data-testid="status-checkout-config">{config.data.message}</div>
+              {sandbox && <Warn />}
+              {config.isLoading && <div className="mc-alert" aria-busy="true">Checking payment availability…</div>}
+              {config.isError && <div className="mc-alert mc-alert-err" role="alert" data-testid="status-config-error">
+                Payments are temporarily unavailable. Your cart is saved. <button type="button" className="mc-btn mc-btn-sm" onClick={() => config.refetch()}>Retry</button>
+              </div>}
+              {config.data && <div className="mc-alert" role="note" data-testid="status-checkout-config">{config.data.message}</div>}
               <h3>Contact for fulfillment</h3>
               <div className="mc-form" style={{ marginTop: 0 }}>
                 <label>Full name<input autoComplete="name" value={buyer.name} onChange={(e) => setBuyer({ ...buyer, name: e.target.value })} maxLength={100} data-testid="input-name" /></label>
@@ -98,8 +98,8 @@ export function Checkout() {
               <div className="mc-pay">
                 <label className={method === 'crypto' ? 'on' : ''}>
                   <input type="radio" name="pay" checked={method === 'crypto'} onChange={() => setMethod('crypto')} data-testid="radio-crypto" />
-                  <span><strong>Cryptocurrency (sandbox) <em>Test mode</em></strong>
-                    <small>An invoice is created on OxaPay's hosted payment page. Crypto can confirm faster than bank transfer. For real orders, confirmed crypto payments receive priority dispatch to help your order arrive sooner; delivery times vary. This sandbox invoice is only a test and will not be fulfilled. Processor or network fees may be added according to merchant settings, so check the displayed amount before proceeding. We never ask for wallet keys.</small></span>
+                  <span><strong>Cryptocurrency {sandbox && <em>Test mode</em>}</strong>
+                    <small>An invoice is created on OxaPay's secure hosted payment page. {sandbox ? 'This is a test invoice and will not be fulfilled. ' : 'The farm will arrange fulfillment after payment is confirmed. '}Processor or network fees may be added according to merchant settings; check the displayed amount before paying. We never ask for wallet keys.</small></span>
                 </label>
                 <label className={method === 'bank' ? 'on disabled' : 'disabled'}>
                   <input type="radio" name="pay" disabled data-testid="radio-bacs" />
@@ -109,14 +109,14 @@ export function Checkout() {
               </div>
               {problem && <div className="mc-alert mc-alert-err" role="alert" data-testid="status-stock-problem">One or more calves in your cart are not available in the quantity requested. Edit your cart to continue.</div>}
               {error && <div className="mc-alert mc-alert-err" role="alert" data-testid="status-checkout-error">{error}</div>}
-              <button type="submit" className="mc-btn" disabled={!canSubmit} aria-busy={submitting} data-testid="button-place-order">{submitting ? 'Creating invoice...' : 'Create sandbox invoice'}</button>
+              <button type="submit" className="mc-btn" disabled={!canSubmit} aria-busy={submitting} data-testid="button-place-order">{submitting ? 'Creating invoice...' : sandbox ? 'Create sandbox invoice' : 'Proceed to payment'}</button>
               {!valid && <p className="mc-note">Enter your name, a valid email and a phone number to continue.</p>}
             </div>
             <aside className="mc-totals">
               <h3>Your order</h3>
               {rows.map((r) => (
                 <div className="mc-total-row" key={r.id}>
-                  <span>{r.p?.name ?? `Item ${r.id}`} x {r.qty}{r.p && <small style={{ display: 'block', color: '#999' }}>Sandbox inventory: {r.p.available} (not real stock)</small>}</span>
+                  <span>{r.p?.name ?? `Item ${r.id}`} x {r.qty}{r.p && config.data && <small style={{ display: 'block', color: '#999' }}>{sandbox ? 'Sandbox inventory (not real stock)' : 'Available'}: {r.p.available}</small>}</span>
                   <span>{r.p ? fmt(r.p.price * r.qty) : 'Unavailable'}</span>
                 </div>
               ))}
