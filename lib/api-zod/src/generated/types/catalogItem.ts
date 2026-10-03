@@ -11,4 +11,10 @@ export interface CatalogItem {
   name: string;
   price: number;
   available: number;
+  reserved?: number;
+  active?: boolean;
+  slug?: string;
+  category?: string;
+  description?: string;
+  images?: string[];
 }

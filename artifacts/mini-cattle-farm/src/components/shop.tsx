@@ -16,10 +16,12 @@ const menu = [
 export function Layout({ children }: { children: ReactNode }) {
   const [loc] = useLocation();
   const [open, setOpen] = useState(false);
-  const { cartCount, wishlist, compare, notice } = useStore();
+  const { cartCount, wishlist, compare, notice, products } = useStore();
   useEffect(() => {
     window.scrollTo(0, 0);
     setOpen(false);
+  }, [loc]);
+  useEffect(() => {
     const product = products.find(p => `/product/${p.slug}` === loc);
     const routeTitles: Record<string, string> = {
       '/shop': 'Shop', '/cart': 'Cart', '/checkout': 'Checkout',
@@ -46,7 +48,7 @@ export function Layout({ children }: { children: ReactNode }) {
     setMeta('og:description', description, true);
     setMeta('og:type', 'website', true);
     setMeta('robots', loc === '/admin-preview' ? 'noindex,nofollow' : 'index,follow');
-  }, [loc]);
+  }, [loc, products]);
   return (
     <div className="mc-site">
       <header className="mc-header">
@@ -112,7 +114,7 @@ export function Layout({ children }: { children: ReactNode }) {
           <Link href="/wishlist">Wishlist</Link>
           <Link href="/compare">Compare</Link>
           <Link href="/admin-preview" data-testid="link-preview-access">Preview access</Link>
-          <Link href="/owner/orders" data-testid="link-owner-orders">Owner orders</Link>
+          <Link href="/owner/orders" data-testid="link-owner-orders">Admin sign in</Link>
         </div>
       </footer>
       {notice && <div className="mc-toast" role="status">{notice}</div>}

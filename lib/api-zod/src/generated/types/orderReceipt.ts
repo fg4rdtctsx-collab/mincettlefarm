@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { OrderLine } from './orderLine';
+import type { OrderReceiptPaymentMethod } from './orderReceiptPaymentMethod';
 import type { OrderReceiptStatus } from './orderReceiptStatus';
 
 export interface OrderReceipt {
@@ -21,5 +22,12 @@ export interface OrderReceipt {
   trackId: string | null;
   expiresAt: string;
   createdAt: string;
+  /** @nullable */
+  paidAt?: string | null;
   message: string;
+  paymentMethod?: OrderReceiptPaymentMethod;
+  /** @nullable */
+  bankEmailUrl?: string | null;
+  /** @nullable */
+  fulfilledAt?: string | null;
 }

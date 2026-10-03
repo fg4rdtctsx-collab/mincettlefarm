@@ -8,15 +8,77 @@
 import * as zod from 'zod';
 
 
+export const recordVisitBodyPathMax = 200;
+
+export const recordVisitBodyReferrerMax = 200;
+
+
+
+export const RecordVisitBody = zod.object({
+  "eventId": zod.string().uuid(),
+  "sessionId": zod.string().uuid(),
+  "path": zod.string().max(recordVisitBodyPathMax),
+  "referrer": zod.string().max(recordVisitBodyReferrerMax).optional()
+})
+
+export const RecordVisitResponse = zod.object({
+  "status": zod.string()
+})
+
+
+export const getOwnerAnalyticsQueryMonthRegExp = new RegExp('^\\d{4}-\\d{2}$');
+export const getOwnerAnalyticsQueryYearMin = 2020;
+export const getOwnerAnalyticsQueryYearMax = 2100;
+
+
+
+export const GetOwnerAnalyticsQueryParams = zod.object({
+  "period": zod.enum(['daily', 'monthly']),
+  "month": zod.coerce.string().regex(getOwnerAnalyticsQueryMonthRegExp).optional(),
+  "year": zod.coerce.number().int().min(getOwnerAnalyticsQueryYearMin).max(getOwnerAnalyticsQueryYearMax).optional()
+})
+
+export const GetOwnerAnalyticsResponse = zod.object({
+  "period": zod.enum(['daily', 'monthly']),
+  "timezone": zod.string(),
+  "trackingStartedAt": zod.string(),
+  "totals": zod.object({
+  "bucket": zod.string(),
+  "revenue": zod.number(),
+  "paidOrders": zod.number().int(),
+  "visitors": zod.number().int(),
+  "pageViews": zod.number().int()
+}),
+  "buckets": zod.array(zod.object({
+  "bucket": zod.string(),
+  "revenue": zod.number(),
+  "paidOrders": zod.number().int(),
+  "visitors": zod.number().int(),
+  "pageViews": zod.number().int()
+})),
+  "topPages": zod.array(zod.object({
+  "path": zod.string(),
+  "views": zod.number().int()
+}))
+})
+
+
 export const GetCheckoutConfigResponse = zod.object({
   "available": zod.boolean(),
+  "bankAvailable": zod.boolean().optional(),
   "sandbox": zod.boolean(),
   "message": zod.string(),
   "products": zod.array(zod.object({
   "id": zod.number().int(),
   "name": zod.string(),
   "price": zod.number(),
-  "available": zod.number().int()
+  "available": zod.number().int(),
+  "reserved": zod.number().int().optional(),
+  "active": zod.boolean().optional(),
+  "slug": zod.string().optional(),
+  "category": zod.string().optional(),
+  "description": zod.string().optional(),
+  "images": zod.array(zod.string()).optional()
 }))
 })
 
@@ -46,7 +108,8 @@ export const CreateOrderBody = zod.object({
   "id": zod.number().int().min(1),
   "qty": zod.number().int().min(1).max(createOrderBodyLinesItemQtyMax)
 })).min(1).max(createOrderBodyLinesMax),
-  "idempotencyKey": zod.string().uuid()
+  "idempotencyKey": zod.string().uuid(),
+  "paymentMethod": zod.enum(['crypto', 'bank']).optional()
 })
 
 export const CreateOrderResponse = zod.object({
@@ -66,7 +129,11 @@ export const CreateOrderResponse = zod.object({
   "trackId": zod.string().nullable(),
   "expiresAt": zod.string(),
   "createdAt": zod.string(),
-  "message": zod.string()
+  "paidAt": zod.string().nullish(),
+  "message": zod.string(),
+  "paymentMethod": zod.enum(['crypto', 'bank']).optional(),
+  "bankEmailUrl": zod.string().nullish(),
+  "fulfilledAt": zod.string().nullish()
 }),
   "accessToken": zod.string()
 })
@@ -96,7 +163,11 @@ export const GetOrderResponse = zod.object({
   "trackId": zod.string().nullable(),
   "expiresAt": zod.string(),
   "createdAt": zod.string(),
-  "message": zod.string()
+  "paidAt": zod.string().nullish(),
+  "message": zod.string(),
+  "paymentMethod": zod.enum(['crypto', 'bank']).optional(),
+  "bankEmailUrl": zod.string().nullish(),
+  "fulfilledAt": zod.string().nullish()
 })
 
 
@@ -127,7 +198,11 @@ export const GetOwnerOrdersResponseItem = zod.object({
   "trackId": zod.string().nullable(),
   "expiresAt": zod.string(),
   "createdAt": zod.string(),
-  "message": zod.string()
+  "paidAt": zod.string().nullish(),
+  "message": zod.string(),
+  "paymentMethod": zod.enum(['crypto', 'bank']).optional(),
+  "bankEmailUrl": zod.string().nullish(),
+  "fulfilledAt": zod.string().nullish()
 }),
   "buyer": zod.object({
   "name": zod.string().min(getOwnerOrdersResponseBuyerNameMin).max(getOwnerOrdersResponseBuyerNameMax),
@@ -136,6 +211,220 @@ export const GetOwnerOrdersResponseItem = zod.object({
 })
 })
 export const GetOwnerOrdersResponse = zod.array(GetOwnerOrdersResponseItem)
+
+
+export const GetOwnerInventoryResponseItem = zod.object({
+  "id": zod.number().int(),
+  "name": zod.string(),
+  "price": zod.number(),
+  "available": zod.number().int(),
+  "reserved": zod.number().int(),
+  "active": zod.boolean(),
+  "slug": zod.string(),
+  "category": zod.string(),
+  "description": zod.string(),
+  "images": zod.array(zod.string())
+}).and(zod.object({
+  "stock": zod.number().int(),
+  "reserved": zod.number().int(),
+  "active": zod.boolean(),
+  "version": zod.number().int(),
+  "category": zod.string(),
+  "description": zod.string(),
+  "images": zod.array(zod.string()),
+  "slug": zod.string()
+}))
+export const GetOwnerInventoryResponse = zod.array(GetOwnerInventoryResponseItem)
+
+
+export const createOwnerLivestockBodyNameMax = 100;
+
+export const createOwnerLivestockBodyPriceMin = 0.01;
+export const createOwnerLivestockBodyPriceMax = 1000000;
+
+export const createOwnerLivestockBodyStockMin = 0;
+export const createOwnerLivestockBodyStockMax = 1000;
+
+export const createOwnerLivestockBodyCategoryMax = 100;
+
+export const createOwnerLivestockBodyDescriptionMax = 10000;
+
+export const createOwnerLivestockBodyImagesItemMax = 2000;
+
+export const createOwnerLivestockBodyImagesMax = 8;
+
+
+
+export const CreateOwnerLivestockBody = zod.object({
+  "name": zod.string().min(1).max(createOwnerLivestockBodyNameMax),
+  "active": zod.boolean().optional(),
+  "price": zod.number().min(createOwnerLivestockBodyPriceMin).max(createOwnerLivestockBodyPriceMax),
+  "stock": zod.number().int().min(createOwnerLivestockBodyStockMin).max(createOwnerLivestockBodyStockMax),
+  "category": zod.string().min(1).max(createOwnerLivestockBodyCategoryMax),
+  "description": zod.string().max(createOwnerLivestockBodyDescriptionMax),
+  "images": zod.array(zod.string().max(createOwnerLivestockBodyImagesItemMax)).max(createOwnerLivestockBodyImagesMax)
+})
+
+export const CreateOwnerLivestockResponse = zod.object({
+  "id": zod.number().int(),
+  "name": zod.string(),
+  "price": zod.number(),
+  "available": zod.number().int(),
+  "reserved": zod.number().int(),
+  "active": zod.boolean(),
+  "slug": zod.string(),
+  "category": zod.string(),
+  "description": zod.string(),
+  "images": zod.array(zod.string())
+}).and(zod.object({
+  "stock": zod.number().int(),
+  "reserved": zod.number().int(),
+  "active": zod.boolean(),
+  "version": zod.number().int(),
+  "category": zod.string(),
+  "description": zod.string(),
+  "images": zod.array(zod.string()),
+  "slug": zod.string()
+}))
+
+
+export const UpdateOwnerLivestockParams = zod.object({
+  "id": zod.coerce.number().int()
+})
+
+export const updateOwnerLivestockBodyOneNameMax = 100;
+
+export const updateOwnerLivestockBodyOnePriceMin = 0.01;
+export const updateOwnerLivestockBodyOnePriceMax = 1000000;
+
+export const updateOwnerLivestockBodyOneStockMin = 0;
+export const updateOwnerLivestockBodyOneStockMax = 1000;
+
+export const updateOwnerLivestockBodyOneCategoryMax = 100;
+
+export const updateOwnerLivestockBodyOneDescriptionMax = 10000;
+
+export const updateOwnerLivestockBodyOneImagesItemMax = 2000;
+
+export const updateOwnerLivestockBodyOneImagesMax = 8;
+
+export const updateOwnerLivestockBodyTwoVersionMin = 0;
+
+export const updateOwnerLivestockBodyTwoExpectedStockMin = 0;
+
+
+
+export const UpdateOwnerLivestockBody = zod.object({
+  "name": zod.string().min(1).max(updateOwnerLivestockBodyOneNameMax),
+  "active": zod.boolean(),
+  "price": zod.number().min(updateOwnerLivestockBodyOnePriceMin).max(updateOwnerLivestockBodyOnePriceMax),
+  "stock": zod.number().int().min(updateOwnerLivestockBodyOneStockMin).max(updateOwnerLivestockBodyOneStockMax),
+  "category": zod.string().min(1).max(updateOwnerLivestockBodyOneCategoryMax),
+  "description": zod.string().max(updateOwnerLivestockBodyOneDescriptionMax),
+  "images": zod.array(zod.string().max(updateOwnerLivestockBodyOneImagesItemMax)).max(updateOwnerLivestockBodyOneImagesMax)
+}).and(zod.object({
+  "version": zod.number().int().min(updateOwnerLivestockBodyTwoVersionMin),
+  "active": zod.boolean(),
+  "expectedStock": zod.number().int().min(updateOwnerLivestockBodyTwoExpectedStockMin)
+}))
+
+export const UpdateOwnerLivestockResponse = zod.object({
+  "id": zod.number().int(),
+  "name": zod.string(),
+  "price": zod.number(),
+  "available": zod.number().int(),
+  "reserved": zod.number().int(),
+  "active": zod.boolean(),
+  "slug": zod.string(),
+  "category": zod.string(),
+  "description": zod.string(),
+  "images": zod.array(zod.string())
+}).and(zod.object({
+  "stock": zod.number().int(),
+  "reserved": zod.number().int(),
+  "active": zod.boolean(),
+  "version": zod.number().int(),
+  "category": zod.string(),
+  "description": zod.string(),
+  "images": zod.array(zod.string()),
+  "slug": zod.string()
+}))
+
+
+export const ArchiveOwnerLivestockParams = zod.object({
+  "id": zod.coerce.number().int()
+})
+
+export const archiveOwnerLivestockBodyVersionMin = 0;
+
+
+
+export const ArchiveOwnerLivestockBody = zod.object({
+  "version": zod.number().int().min(archiveOwnerLivestockBodyVersionMin)
+})
+
+export const ArchiveOwnerLivestockResponse = zod.object({
+  "id": zod.number().int(),
+  "name": zod.string(),
+  "price": zod.number(),
+  "available": zod.number().int(),
+  "reserved": zod.number().int(),
+  "active": zod.boolean(),
+  "slug": zod.string(),
+  "category": zod.string(),
+  "description": zod.string(),
+  "images": zod.array(zod.string())
+}).and(zod.object({
+  "stock": zod.number().int(),
+  "reserved": zod.number().int(),
+  "active": zod.boolean(),
+  "version": zod.number().int(),
+  "category": zod.string(),
+  "description": zod.string(),
+  "images": zod.array(zod.string()),
+  "slug": zod.string()
+}))
+
+
+export const ActOnOwnerOrderParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const ActOnOwnerOrderBody = zod.object({
+  "action": zod.enum(['confirm_bank', 'cancel_bank', 'fulfill'])
+})
+
+export const ActOnOwnerOrderResponse = zod.object({
+  "id": zod.string(),
+  "status": zod.enum(['creating', 'pending', 'paying', 'paid', 'expired', 'failed', 'review']),
+  "total": zod.number(),
+  "currency": zod.string(),
+  "sandbox": zod.boolean(),
+  "lines": zod.array(zod.object({
+  "id": zod.number().int(),
+  "name": zod.string(),
+  "qty": zod.number().int(),
+  "unitPrice": zod.number()
+})),
+  "paymentUrl": zod.string().nullable(),
+  "trackId": zod.string().nullable(),
+  "expiresAt": zod.string(),
+  "createdAt": zod.string(),
+  "paidAt": zod.string().nullish(),
+  "message": zod.string(),
+  "paymentMethod": zod.enum(['crypto', 'bank']).optional(),
+  "bankEmailUrl": zod.string().nullish(),
+  "fulfilledAt": zod.string().nullish()
+})
+
+
+export const UploadOwnerImageBody = zod.object({
+  "file": zod.instanceof(Blob)
+})
+
+export const UploadOwnerImageResponse = zod.object({
+  "url": zod.string()
+})
 
 
 /**

@@ -2860,6 +2860,21 @@ async function seedSandboxInventory() {
   if (rows.length) await db.insert(checkoutInventory).values(rows).onConflictDoNothing();
 }
 function receipt(o) {
+  const bankEmailUrl = o.paymentMethod === "bank" ? `mailto:salesminicattlefarm@gmail.com?${new URLSearchParams({
+    subject: `Bank transfer arrangement \u2014 Mini Cattle Farm order ${o.id}`,
+    body: `Hello Mini Cattle Farm,
+
+Please confirm availability and provide bank transfer instructions for order ${o.id}.
+
+Name: ${o.buyer.name}
+Email: ${o.buyer.email}
+Phone: ${o.buyer.phone}
+
+${o.lines.map((l) => `${l.name} \xD7 ${l.qty}: $${(l.unitPrice * l.qty).toFixed(2)}`).join("\n")}
+Total: $${(o.totalCents / 100).toFixed(2)} USD
+
+I understand that this request is not a payment confirmation or stock reservation.`
+  }).toString().replace(/\+/g, "%20")}` : null;
   return {
     id: o.id,
     status: o.status,
@@ -2871,7 +2886,11 @@ function receipt(o) {
     trackId: o.trackId,
     expiresAt: o.expiresAt.toISOString(),
     createdAt: o.createdAt.toISOString(),
-    message: o.message
+    message: o.message,
+    paymentMethod: o.paymentMethod,
+    bankEmailUrl,
+    fulfilledAt: o.fulfilledAt?.toISOString() ?? null,
+    paidAt: o.paidAt?.toISOString() ?? null
   };
 }
 async function readPrivateOrder(id, token) {
@@ -2882,11 +2901,14 @@ async function readPrivateOrder(id, token) {
 function canonical(input) {
   return {
     buyer: { name: input.buyer.name.trim(), email: input.buyer.email.trim().toLowerCase(), phone: input.buyer.phone.trim() },
-    lines: [...input.lines].sort((a, b) => a.id - b.id)
+    lines: [...input.lines].sort((a, b) => a.id - b.id),
+    // Preserve old crypto fingerprints so retries of existing invoices remain safe.
+    ...input.paymentMethod === "bank" ? { paymentMethod: "bank" } : {}
   };
 }
 async function createSandboxOrder(input) {
-  if (!checkoutAvailable()) throw new CheckoutError(503, "Checkout is unavailable. Payment configuration must be completed.");
+  const bank = input.paymentMethod === "bank";
+  if (bank ? !sandboxOrigin() || !process.env.SESSION_SECRET : !checkoutAvailable()) throw new CheckoutError(503, "Checkout is unavailable. Payment configuration must be completed.");
   const clean = canonical(input);
   if (clean.buyer.name.length < 2 || clean.buyer.phone.length < 5 || new Set(clean.lines.map((l) => l.id)).size !== clean.lines.length) {
     throw new CheckoutError(400, "Provide valid buyer details and one line per product.");
@@ -2904,8 +2926,9 @@ async function createSandboxOrder(input) {
     let totalCents = 0;
     for (const line of clean.lines) {
       const [p] = await tx.select().from(checkoutInventory).where(eq(checkoutInventory.id, line.id)).for("update");
-      if (!p || p.priceCents <= 0 || p.available < line.qty) throw new CheckoutError(409, "An item has insufficient available stock. Edit your cart.");
-      await tx.update(checkoutInventory).set({ available: p.available - line.qty }).where(eq(checkoutInventory.id, p.id));
+      if (!p || !p.active || p.priceCents <= 0) throw new CheckoutError(409, "An item is no longer listed. Edit your cart.");
+      if (!bank && p.available < line.qty) throw new CheckoutError(409, `${p.name} is sold out or temporarily reserved by another checkout. Please contact the farm or edit your cart.`);
+      if (!bank) await tx.update(checkoutInventory).set({ available: p.available - line.qty }).where(eq(checkoutInventory.id, p.id));
       lines.push({ id: p.id, name: p.name, qty: line.qty, unitPrice: p.priceCents / 100 });
       totalCents += p.priceCents * line.qty;
     }
@@ -2917,11 +2940,13 @@ async function createSandboxOrder(input) {
       buyer: clean.buyer,
       lines,
       totalCents,
-      expiresAt: new Date(Date.now() + 30 * 6e4)
+      expiresAt: new Date(Date.now() + 30 * 6e4),
+      paymentMethod: bank ? "bank" : "crypto",
+      ...bank ? { status: "pending", released: true, message: "Bank transfer request recorded. Email salesminicattlefarm@gmail.com to confirm availability and arrange payment. No payment is confirmed and no stock is reserved. Bank confirmation may take longer during busy periods." } : {}
     }).returning();
     return { order, fresh: true };
   });
-  if (!created.fresh) return { order: receipt(created.order), accessToken: accessToken(created.order.id) };
+  if (!created.fresh || bank) return { order: receipt(created.order), accessToken: accessToken(created.order.id) };
   const origin = sandboxOrigin();
   try {
     const invoice = await oxapay("invoice", {
@@ -2964,7 +2989,7 @@ async function createSandboxOrder(input) {
   }
 }
 function validatePayment(order, info) {
-  if (String(info.order_id) !== order.id || order.trackId && String(info.track_id) !== order.trackId || !info.track_id || info.type !== "invoice" || info.currency !== "USD" || !Number.isFinite(Number(info.amount)) || Math.abs(Number(info.amount) * 100 - order.totalCents) > 1e-3) {
+  if (order.paymentMethod === "bank" || String(info.order_id) !== order.id || order.trackId && String(info.track_id) !== order.trackId || !info.track_id || info.type !== "invoice" || info.currency !== "USD" || !Number.isFinite(Number(info.amount)) || Math.abs(Number(info.amount) * 100 - order.totalCents) > 1e-3) {
     throw new CheckoutError(409, "Invoice association, amount or currency does not match the order.");
   }
 }
@@ -2999,7 +3024,8 @@ async function applyPayment(id, info) {
       status: next,
       released: o.released || release,
       message: messages[next],
-      checkedAt: /* @__PURE__ */ new Date()
+      checkedAt: /* @__PURE__ */ new Date(),
+      ...next === "paid" ? { paidAt: /* @__PURE__ */ new Date() } : {}
     }).where(eq(checkoutOrders.id, id));
   });
 }
@@ -3033,17 +3059,255 @@ async function reconcileAbandonedOrders() {
   await Promise.all(waiting.map(reconcile));
 }
 
+// src/lib/admin.ts
+import { db as db2, checkoutInventory as checkoutInventory2, checkoutOrders as checkoutOrders2 } from "@workspace/db";
+import { eq as eq2, sql as sql2 } from "drizzle-orm";
+var prefix = () => checkoutIsSandbox() ? "sandbox_checkout" : "live_checkout";
+var categorySlugs = new Set(catalog_default.products.flatMap((p) => p.categories.map((c) => c.slug)));
+async function executeRows(executor, statement) {
+  const result = await executor.execute(statement);
+  return Array.isArray(result) ? result : result.rows;
+}
+async function reservedUnits(executor, id) {
+  const rows = await executeRows(executor, sql2`
+    select coalesce(sum((line->>'qty')::integer),0) as qty
+    from ${checkoutOrders2}, jsonb_array_elements(${checkoutOrders2.lines}) as line
+    where ${checkoutOrders2.released}=false and ${checkoutOrders2.status} not in ('paid','expired','failed')
+    and (line->>'id')::integer=${id}
+  `);
+  return Number(rows[0]?.qty ?? 0);
+}
+function livestockDTO(p, reserved = 0) {
+  const original = catalog_default.products.find((c) => c.id === p.id);
+  return {
+    id: p.id,
+    name: p.name,
+    price: p.priceCents / 100,
+    available: p.available,
+    reserved,
+    stock: p.available + reserved,
+    active: p.active,
+    version: p.version,
+    slug: p.metadata.slug ?? original?.slug ?? `animal-${p.id}`,
+    category: p.metadata.category ?? original?.categories[0]?.slug ?? "",
+    description: p.metadata.description ?? original?.description ?? "",
+    images: p.metadata.images ?? original?.images ?? []
+  };
+}
+async function ownerInventory() {
+  const products = await db2.select().from(checkoutInventory2).orderBy(checkoutInventory2.id);
+  const rows = await executeRows(db2, sql2`
+    select (line->>'id')::integer as id, sum((line->>'qty')::integer) as qty
+    from ${checkoutOrders2}, jsonb_array_elements(${checkoutOrders2.lines}) as line
+    where ${checkoutOrders2.released}=false and ${checkoutOrders2.status} not in ('paid','expired','failed')
+    group by (line->>'id')::integer
+  `);
+  const reservations = new Map(rows.map((r) => [Number(r.id), Number(r.qty)]));
+  return products.map((p) => livestockDTO(p, reservations.get(p.id) ?? 0));
+}
+async function publicInventory() {
+  const originalIds = new Set(catalog_default.products.map((p) => p.id));
+  return (await ownerInventory()).filter((p) => p.active || originalIds.has(p.id)).map(({ stock, version, ...p }) => p);
+}
+function cleanLivestock(input) {
+  const name = input.name.trim();
+  const priceCents = Math.round(input.price * 100);
+  if (!name || !Number.isSafeInteger(priceCents) || priceCents < 1 || !categorySlugs.has(input.category)) {
+    throw new CheckoutError(400, "Provide a name, valid price and one of the farm's livestock categories.");
+  }
+  for (const image of input.images) {
+    if (/^\/?(?:assets|family-assets)\/[^?#]+\.(?:jpe?g|png|webp)$/i.test(image) && !image.split("/").includes("..")) continue;
+    let url;
+    try {
+      url = new URL(image);
+    } catch {
+      throw new CheckoutError(400, "Use uploaded photos or valid HTTPS image URLs.");
+    }
+    if (url.protocol !== "https:" || url.username || url.password || url.hash) throw new CheckoutError(400, "Use valid HTTPS image URLs.");
+  }
+  return { name, priceCents, metadata: {
+    category: input.category,
+    description: input.description.trim(),
+    images: input.images
+  } };
+}
+async function createLivestock(input) {
+  const clean = cleanLivestock(input);
+  const rows = await executeRows(db2, sql2`
+    insert into ${checkoutInventory2} (name,price_cents,available,metadata,active,version)
+    values (${clean.name},${clean.priceCents},${input.stock},${JSON.stringify(clean.metadata)}::jsonb,${input.active !== false},0)
+    returning id
+  `);
+  const id = Number(rows[0]?.id);
+  const slug = `${clean.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "animal"}-${id}`;
+  const [p] = await db2.update(checkoutInventory2).set({ metadata: { ...clean.metadata, slug } }).where(eq2(checkoutInventory2.id, id)).returning();
+  return livestockDTO(p);
+}
+async function updateLivestock(id, input) {
+  const clean = cleanLivestock(input);
+  return db2.transaction(async (tx) => {
+    const [p] = await tx.select().from(checkoutInventory2).where(eq2(checkoutInventory2.id, id)).for("update");
+    if (!p) throw new CheckoutError(404, "Animal not found.");
+    if (p.version !== input.version) throw new CheckoutError(409, "This listing was changed by another admin. Refresh it before saving.");
+    const reserved = await reservedUnits(tx, id);
+    if (p.available + reserved !== input.expectedStock) throw new CheckoutError(409, "Stock changed since this listing was opened. Refresh before saving to avoid overwriting a sale.");
+    if (input.stock < reserved) throw new CheckoutError(409, `There are ${reserved} reserved units. Unsold stock cannot be less than this.`);
+    if (!input.active && reserved) throw new CheckoutError(409, "An animal with an active checkout reservation cannot be archived.");
+    const [updated] = await tx.update(checkoutInventory2).set({
+      ...clean,
+      metadata: { ...p.metadata, ...clean.metadata },
+      available: input.stock - reserved,
+      active: input.active,
+      version: p.version + 1
+    }).where(eq2(checkoutInventory2.id, id)).returning();
+    return livestockDTO(updated, reserved);
+  });
+}
+async function archiveLivestock(id, version) {
+  return db2.transaction(async (tx) => {
+    const [p] = await tx.select().from(checkoutInventory2).where(eq2(checkoutInventory2.id, id)).for("update");
+    if (!p) throw new CheckoutError(404, "Animal not found.");
+    if (p.version !== version) throw new CheckoutError(409, "This listing changed. Refresh before archiving.");
+    if (await reservedUnits(tx, id)) throw new CheckoutError(409, "Wait until this animal's active checkout reservation is resolved.");
+    const [updated] = await tx.update(checkoutInventory2).set({ active: false, version: p.version + 1 }).where(eq2(checkoutInventory2.id, id)).returning();
+    return livestockDTO(updated);
+  });
+}
+async function ownerOrderAction(id, action) {
+  return db2.transaction(async (tx) => {
+    const [order] = await tx.select().from(checkoutOrders2).where(eq2(checkoutOrders2.id, id)).for("update");
+    if (!order) throw new CheckoutError(404, "Order not found.");
+    if (action === "fulfill") {
+      if (order.status !== "paid") throw new CheckoutError(409, "Only paid orders can be fulfilled.");
+      if (order.fulfilledAt) return receipt(order);
+      const [updated2] = await tx.update(checkoutOrders2).set({ fulfilledAt: /* @__PURE__ */ new Date() }).where(eq2(checkoutOrders2.id, id)).returning();
+      return receipt(updated2);
+    }
+    if (order.paymentMethod !== "bank") throw new CheckoutError(409, "Crypto payment status can only be confirmed by OxaPay.");
+    if (action === "confirm_bank" && order.status === "paid") return receipt(order);
+    if (action === "cancel_bank" && order.status === "failed") return receipt(order);
+    if (order.status !== "pending" || !order.released) throw new CheckoutError(409, "Only unpaid bank requests can be confirmed or cancelled.");
+    if (action === "confirm_bank") {
+      for (const line of [...order.lines].sort((a, b) => a.id - b.id)) {
+        const [p] = await tx.select().from(checkoutInventory2).where(eq2(checkoutInventory2.id, line.id)).for("update");
+        if (!p?.active || p.available < line.qty) throw new CheckoutError(409, `${line.name} is unavailable or reserved. Resolve availability with the buyer before confirming.`);
+        await tx.update(checkoutInventory2).set({ available: p.available - line.qty }).where(eq2(checkoutInventory2.id, p.id));
+      }
+    }
+    const [updated] = await tx.update(checkoutOrders2).set(
+      action === "confirm_bank" ? { status: "paid", released: false, paidAt: /* @__PURE__ */ new Date(), message: "The farm has verified your bank transfer. Payment confirmed; the farm will arrange fulfillment." } : { status: "failed", message: "The farm cancelled this unpaid bank transfer request. No payment is confirmed." }
+    ).where(eq2(checkoutOrders2.id, id)).returning();
+    return receipt(updated);
+  });
+}
+async function ownerAnalytics(period, month, year) {
+  const now = /* @__PURE__ */ new Date();
+  const parts = new Intl.DateTimeFormat("en", { timeZone: "Africa/Lagos", year: "numeric", month: "2-digit" }).formatToParts(now);
+  const currentMonth = `${parts.find((p) => p.type === "year").value}-${parts.find((p) => p.type === "month").value}`;
+  const selected = month || currentMonth;
+  const y = Number(year || now.getUTCFullYear());
+  if (!["daily", "monthly"].includes(period) || !/^\d{4}-(0[1-9]|1[0-2])$/.test(selected) || !Number.isInteger(y) || y < 2020 || y > 2100 || Number(selected.slice(0, 4)) < 2020 || Number(selected.slice(0, 4)) > 2100) {
+    throw new CheckoutError(400, "Select a valid reporting month or year.");
+  }
+  const start = period === "daily" ? `${selected}-01` : `${y}-01-01`;
+  const visits = sql2.identifier(`${prefix()}_visits`);
+  const settings = sql2.identifier(`${prefix()}_analytics_start`);
+  const step = period === "daily" ? "1 day" : "1 month";
+  const span = period === "daily" ? "1 month" : "1 year";
+  const trunc = period === "daily" ? "day" : "month";
+  const format = period === "daily" ? "YYYY-MM-DD" : "YYYY-MM";
+  const window = sql2`created_at >= (${start}::timestamp at time zone 'Africa/Lagos') and created_at < ((${start}::timestamp + ${span}::interval) at time zone 'Africa/Lagos')`;
+  const rows = await executeRows(db2, sql2`
+    with buckets as (select generate_series(${start}::timestamp, ${start}::timestamp + ${span}::interval - ${step}::interval, ${step}::interval) as day),
+    sales as (
+      select date_trunc(${trunc}, ${checkoutOrders2.paidAt} at time zone 'Africa/Lagos') as day,
+      sum(${checkoutOrders2.totalCents})/100.0 as revenue,count(*) as paid_orders
+      from ${checkoutOrders2} where ${checkoutOrders2.status}='paid' and ${!checkoutIsSandbox()}
+      and ${checkoutOrders2.paidAt} >= (${start}::timestamp at time zone 'Africa/Lagos')
+      and ${checkoutOrders2.paidAt} < ((${start}::timestamp + ${span}::interval) at time zone 'Africa/Lagos')
+      group by 1
+    ), traffic as (
+      select date_trunc(${trunc},created_at at time zone 'Africa/Lagos') as day,count(*) as page_views,count(distinct session_id) as visitors
+      from public.${visits} where ${window} group by 1
+    )
+    select to_char(b.day,${format}) as bucket,coalesce(s.revenue,0) as revenue,coalesce(s.paid_orders,0) as paid_orders,
+    coalesce(t.page_views,0) as page_views,coalesce(t.visitors,0) as visitors
+    from buckets b left join sales s using(day) left join traffic t using(day) order by b.day
+  `);
+  const pages = await executeRows(db2, sql2`select path,count(*) as views from public.${visits} where ${window} group by path order by views desc,path limit 10`);
+  const traffic = await executeRows(db2, sql2`select count(distinct session_id) as visitors from public.${visits} where ${window}`);
+  const started = await executeRows(db2, sql2`select started_at from public.${settings} where id=1`);
+  const buckets = rows.map((r) => ({ bucket: String(r.bucket), revenue: Number(r.revenue), paidOrders: Number(r.paid_orders), visitors: Number(r.visitors), pageViews: Number(r.page_views) }));
+  return {
+    period,
+    timezone: "Africa/Lagos",
+    trackingStartedAt: new Date(String(started[0].started_at)).toISOString(),
+    buckets,
+    topPages: pages.map((p) => ({ path: String(p.path), views: Number(p.views) })),
+    totals: { bucket: period === "daily" ? selected : String(y), revenue: buckets.reduce((s, b) => s + b.revenue, 0), paidOrders: buckets.reduce((s, b) => s + b.paidOrders, 0), visitors: Number(traffic[0].visitors), pageViews: buckets.reduce((s, b) => s + b.pageViews, 0) }
+  };
+}
+
 // ../../lib/api-zod/src/generated/api.ts
 import * as zod from "zod";
+var recordVisitBodyPathMax = 200;
+var recordVisitBodyReferrerMax = 200;
+var RecordVisitBody = zod.object({
+  "eventId": zod.string().uuid(),
+  "sessionId": zod.string().uuid(),
+  "path": zod.string().max(recordVisitBodyPathMax),
+  "referrer": zod.string().max(recordVisitBodyReferrerMax).optional()
+});
+var RecordVisitResponse = zod.object({
+  "status": zod.string()
+});
+var getOwnerAnalyticsQueryMonthRegExp = new RegExp("^\\d{4}-\\d{2}$");
+var getOwnerAnalyticsQueryYearMin = 2020;
+var getOwnerAnalyticsQueryYearMax = 2100;
+var GetOwnerAnalyticsQueryParams = zod.object({
+  "period": zod.enum(["daily", "monthly"]),
+  "month": zod.coerce.string().regex(getOwnerAnalyticsQueryMonthRegExp).optional(),
+  "year": zod.coerce.number().int().min(getOwnerAnalyticsQueryYearMin).max(getOwnerAnalyticsQueryYearMax).optional()
+});
+var GetOwnerAnalyticsResponse = zod.object({
+  "period": zod.enum(["daily", "monthly"]),
+  "timezone": zod.string(),
+  "trackingStartedAt": zod.string(),
+  "totals": zod.object({
+    "bucket": zod.string(),
+    "revenue": zod.number(),
+    "paidOrders": zod.number().int(),
+    "visitors": zod.number().int(),
+    "pageViews": zod.number().int()
+  }),
+  "buckets": zod.array(zod.object({
+    "bucket": zod.string(),
+    "revenue": zod.number(),
+    "paidOrders": zod.number().int(),
+    "visitors": zod.number().int(),
+    "pageViews": zod.number().int()
+  })),
+  "topPages": zod.array(zod.object({
+    "path": zod.string(),
+    "views": zod.number().int()
+  }))
+});
 var GetCheckoutConfigResponse = zod.object({
   "available": zod.boolean(),
+  "bankAvailable": zod.boolean().optional(),
   "sandbox": zod.boolean(),
   "message": zod.string(),
   "products": zod.array(zod.object({
     "id": zod.number().int(),
     "name": zod.string(),
     "price": zod.number(),
-    "available": zod.number().int()
+    "available": zod.number().int(),
+    "reserved": zod.number().int().optional(),
+    "active": zod.boolean().optional(),
+    "slug": zod.string().optional(),
+    "category": zod.string().optional(),
+    "description": zod.string().optional(),
+    "images": zod.array(zod.string()).optional()
   }))
 });
 var createOrderBodyBuyerNameMin = 2;
@@ -3063,7 +3327,8 @@ var CreateOrderBody = zod.object({
     "id": zod.number().int().min(1),
     "qty": zod.number().int().min(1).max(createOrderBodyLinesItemQtyMax)
   })).min(1).max(createOrderBodyLinesMax),
-  "idempotencyKey": zod.string().uuid()
+  "idempotencyKey": zod.string().uuid(),
+  "paymentMethod": zod.enum(["crypto", "bank"]).optional()
 });
 var CreateOrderResponse = zod.object({
   "order": zod.object({
@@ -3082,7 +3347,11 @@ var CreateOrderResponse = zod.object({
     "trackId": zod.string().nullable(),
     "expiresAt": zod.string(),
     "createdAt": zod.string(),
-    "message": zod.string()
+    "paidAt": zod.string().nullish(),
+    "message": zod.string(),
+    "paymentMethod": zod.enum(["crypto", "bank"]).optional(),
+    "bankEmailUrl": zod.string().nullish(),
+    "fulfilledAt": zod.string().nullish()
   }),
   "accessToken": zod.string()
 });
@@ -3108,7 +3377,11 @@ var GetOrderResponse = zod.object({
   "trackId": zod.string().nullable(),
   "expiresAt": zod.string(),
   "createdAt": zod.string(),
-  "message": zod.string()
+  "paidAt": zod.string().nullish(),
+  "message": zod.string(),
+  "paymentMethod": zod.enum(["crypto", "bank"]).optional(),
+  "bankEmailUrl": zod.string().nullish(),
+  "fulfilledAt": zod.string().nullish()
 });
 var getOwnerOrdersResponseBuyerNameMin = 2;
 var getOwnerOrdersResponseBuyerNameMax = 100;
@@ -3132,7 +3405,11 @@ var GetOwnerOrdersResponseItem = zod.object({
     "trackId": zod.string().nullable(),
     "expiresAt": zod.string(),
     "createdAt": zod.string(),
-    "message": zod.string()
+    "paidAt": zod.string().nullish(),
+    "message": zod.string(),
+    "paymentMethod": zod.enum(["crypto", "bank"]).optional(),
+    "bankEmailUrl": zod.string().nullish(),
+    "fulfilledAt": zod.string().nullish()
   }),
   "buyer": zod.object({
     "name": zod.string().min(getOwnerOrdersResponseBuyerNameMin).max(getOwnerOrdersResponseBuyerNameMax),
@@ -3141,19 +3418,202 @@ var GetOwnerOrdersResponseItem = zod.object({
   })
 });
 var GetOwnerOrdersResponse = zod.array(GetOwnerOrdersResponseItem);
+var GetOwnerInventoryResponseItem = zod.object({
+  "id": zod.number().int(),
+  "name": zod.string(),
+  "price": zod.number(),
+  "available": zod.number().int(),
+  "reserved": zod.number().int(),
+  "active": zod.boolean(),
+  "slug": zod.string(),
+  "category": zod.string(),
+  "description": zod.string(),
+  "images": zod.array(zod.string())
+}).and(zod.object({
+  "stock": zod.number().int(),
+  "reserved": zod.number().int(),
+  "active": zod.boolean(),
+  "version": zod.number().int(),
+  "category": zod.string(),
+  "description": zod.string(),
+  "images": zod.array(zod.string()),
+  "slug": zod.string()
+}));
+var GetOwnerInventoryResponse = zod.array(GetOwnerInventoryResponseItem);
+var createOwnerLivestockBodyNameMax = 100;
+var createOwnerLivestockBodyPriceMin = 0.01;
+var createOwnerLivestockBodyPriceMax = 1e6;
+var createOwnerLivestockBodyStockMin = 0;
+var createOwnerLivestockBodyStockMax = 1e3;
+var createOwnerLivestockBodyCategoryMax = 100;
+var createOwnerLivestockBodyDescriptionMax = 1e4;
+var createOwnerLivestockBodyImagesItemMax = 2e3;
+var createOwnerLivestockBodyImagesMax = 8;
+var CreateOwnerLivestockBody = zod.object({
+  "name": zod.string().min(1).max(createOwnerLivestockBodyNameMax),
+  "active": zod.boolean().optional(),
+  "price": zod.number().min(createOwnerLivestockBodyPriceMin).max(createOwnerLivestockBodyPriceMax),
+  "stock": zod.number().int().min(createOwnerLivestockBodyStockMin).max(createOwnerLivestockBodyStockMax),
+  "category": zod.string().min(1).max(createOwnerLivestockBodyCategoryMax),
+  "description": zod.string().max(createOwnerLivestockBodyDescriptionMax),
+  "images": zod.array(zod.string().max(createOwnerLivestockBodyImagesItemMax)).max(createOwnerLivestockBodyImagesMax)
+});
+var CreateOwnerLivestockResponse = zod.object({
+  "id": zod.number().int(),
+  "name": zod.string(),
+  "price": zod.number(),
+  "available": zod.number().int(),
+  "reserved": zod.number().int(),
+  "active": zod.boolean(),
+  "slug": zod.string(),
+  "category": zod.string(),
+  "description": zod.string(),
+  "images": zod.array(zod.string())
+}).and(zod.object({
+  "stock": zod.number().int(),
+  "reserved": zod.number().int(),
+  "active": zod.boolean(),
+  "version": zod.number().int(),
+  "category": zod.string(),
+  "description": zod.string(),
+  "images": zod.array(zod.string()),
+  "slug": zod.string()
+}));
+var UpdateOwnerLivestockParams = zod.object({
+  "id": zod.coerce.number().int()
+});
+var updateOwnerLivestockBodyOneNameMax = 100;
+var updateOwnerLivestockBodyOnePriceMin = 0.01;
+var updateOwnerLivestockBodyOnePriceMax = 1e6;
+var updateOwnerLivestockBodyOneStockMin = 0;
+var updateOwnerLivestockBodyOneStockMax = 1e3;
+var updateOwnerLivestockBodyOneCategoryMax = 100;
+var updateOwnerLivestockBodyOneDescriptionMax = 1e4;
+var updateOwnerLivestockBodyOneImagesItemMax = 2e3;
+var updateOwnerLivestockBodyOneImagesMax = 8;
+var updateOwnerLivestockBodyTwoVersionMin = 0;
+var updateOwnerLivestockBodyTwoExpectedStockMin = 0;
+var UpdateOwnerLivestockBody = zod.object({
+  "name": zod.string().min(1).max(updateOwnerLivestockBodyOneNameMax),
+  "active": zod.boolean(),
+  "price": zod.number().min(updateOwnerLivestockBodyOnePriceMin).max(updateOwnerLivestockBodyOnePriceMax),
+  "stock": zod.number().int().min(updateOwnerLivestockBodyOneStockMin).max(updateOwnerLivestockBodyOneStockMax),
+  "category": zod.string().min(1).max(updateOwnerLivestockBodyOneCategoryMax),
+  "description": zod.string().max(updateOwnerLivestockBodyOneDescriptionMax),
+  "images": zod.array(zod.string().max(updateOwnerLivestockBodyOneImagesItemMax)).max(updateOwnerLivestockBodyOneImagesMax)
+}).and(zod.object({
+  "version": zod.number().int().min(updateOwnerLivestockBodyTwoVersionMin),
+  "active": zod.boolean(),
+  "expectedStock": zod.number().int().min(updateOwnerLivestockBodyTwoExpectedStockMin)
+}));
+var UpdateOwnerLivestockResponse = zod.object({
+  "id": zod.number().int(),
+  "name": zod.string(),
+  "price": zod.number(),
+  "available": zod.number().int(),
+  "reserved": zod.number().int(),
+  "active": zod.boolean(),
+  "slug": zod.string(),
+  "category": zod.string(),
+  "description": zod.string(),
+  "images": zod.array(zod.string())
+}).and(zod.object({
+  "stock": zod.number().int(),
+  "reserved": zod.number().int(),
+  "active": zod.boolean(),
+  "version": zod.number().int(),
+  "category": zod.string(),
+  "description": zod.string(),
+  "images": zod.array(zod.string()),
+  "slug": zod.string()
+}));
+var ArchiveOwnerLivestockParams = zod.object({
+  "id": zod.coerce.number().int()
+});
+var archiveOwnerLivestockBodyVersionMin = 0;
+var ArchiveOwnerLivestockBody = zod.object({
+  "version": zod.number().int().min(archiveOwnerLivestockBodyVersionMin)
+});
+var ArchiveOwnerLivestockResponse = zod.object({
+  "id": zod.number().int(),
+  "name": zod.string(),
+  "price": zod.number(),
+  "available": zod.number().int(),
+  "reserved": zod.number().int(),
+  "active": zod.boolean(),
+  "slug": zod.string(),
+  "category": zod.string(),
+  "description": zod.string(),
+  "images": zod.array(zod.string())
+}).and(zod.object({
+  "stock": zod.number().int(),
+  "reserved": zod.number().int(),
+  "active": zod.boolean(),
+  "version": zod.number().int(),
+  "category": zod.string(),
+  "description": zod.string(),
+  "images": zod.array(zod.string()),
+  "slug": zod.string()
+}));
+var ActOnOwnerOrderParams = zod.object({
+  "id": zod.coerce.string()
+});
+var ActOnOwnerOrderBody = zod.object({
+  "action": zod.enum(["confirm_bank", "cancel_bank", "fulfill"])
+});
+var ActOnOwnerOrderResponse = zod.object({
+  "id": zod.string(),
+  "status": zod.enum(["creating", "pending", "paying", "paid", "expired", "failed", "review"]),
+  "total": zod.number(),
+  "currency": zod.string(),
+  "sandbox": zod.boolean(),
+  "lines": zod.array(zod.object({
+    "id": zod.number().int(),
+    "name": zod.string(),
+    "qty": zod.number().int(),
+    "unitPrice": zod.number()
+  })),
+  "paymentUrl": zod.string().nullable(),
+  "trackId": zod.string().nullable(),
+  "expiresAt": zod.string(),
+  "createdAt": zod.string(),
+  "paidAt": zod.string().nullish(),
+  "message": zod.string(),
+  "paymentMethod": zod.enum(["crypto", "bank"]).optional(),
+  "bankEmailUrl": zod.string().nullish(),
+  "fulfilledAt": zod.string().nullish()
+});
+var UploadOwnerImageBody = zod.object({
+  "file": zod.instanceof(Blob)
+});
+var UploadOwnerImageResponse = zod.object({
+  "url": zod.string()
+});
 var ReceiveOxapayCallbackResponse = zod.string();
 var HealthCheckResponse = zod.object({
   "status": zod.string()
 });
 export {
+  ActOnOwnerOrderBody,
+  ArchiveOwnerLivestockBody,
   CheckoutError,
   CreateOrderBody,
+  CreateOwnerLivestockBody,
+  RecordVisitBody,
+  UpdateOwnerLivestockBody,
   accessToken,
   applyPayment,
+  archiveLivestock,
   checkoutAvailable,
   checkoutIsSandbox,
+  createLivestock,
   createSandboxOrder,
+  livestockDTO,
+  ownerAnalytics,
+  ownerInventory,
+  ownerOrderAction,
   oxapay,
+  publicInventory,
   readPrivateOrder,
   receipt,
   reconcile,
@@ -3164,6 +3624,7 @@ export {
   securePaymentUrl,
   seedSandboxInventory,
   sha256,
+  updateLivestock,
   validatePayment,
   verifySignature
 };

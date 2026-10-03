@@ -5,6 +5,7 @@ import { eq, desc } from "drizzle-orm";
 import { CreateOrderBody } from "@workspace/api-zod";
 import { applyPayment, checkoutAvailable, createSandboxOrder, readPrivateOrder, receipt, reconcile } from "../lib/checkout";
 import { CheckoutError, oxapay, verifySignature, type PaymentInfo } from "../lib/oxapay";
+import { publicInventory } from "../lib/admin";
 
 const router = Router();
 const windows = new Map<string, { count: number; end: number }>();
@@ -19,14 +20,15 @@ function throttle(req: Request, res: Response, next: NextFunction) {
   next();
 }
 router.get("/checkout/config", async (_req, res) => {
-  const products = await db.select().from(checkoutInventory);
+  const products = await publicInventory();
   res.setHeader("Cache-Control", "no-store");
   res.json({
     available: checkoutAvailable(), sandbox: true,
+    bankAvailable: Boolean(process.env.SESSION_SECRET),
     message: checkoutAvailable()
       ? "Sandbox test checkout only. Do not send real funds. Displayed stock is artificial test inventory; live prices and stock await merchant confirmation."
       : "Crypto checkout is unavailable. Live payments are disabled; merchant configuration and an approved public URL are required.",
-    products: products.map(p => ({ id: p.id, name: p.name, price: p.priceCents / 100, available: p.available })),
+    products,
   });
 });
 router.post("/orders", throttle, async (req, res) => {

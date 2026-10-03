@@ -4,10 +4,9 @@ import { Trash2 } from 'lucide-react';
 import { Layout, PageBanner, Price } from '@/components/shop';
 import { asset, fmt, paragraphs, products, useStore } from '@/lib/store';
 
-const byId = (id: number) => products.find((p) => p.id === id)!;
-
 export function Cart() {
-  const { cart, priceOf, setQty, removeFromCart, cartTotal } = useStore();
+  const { cart, priceOf, setQty, removeFromCart, cartTotal, products, inStock } = useStore();
+  const byId = (id: number) => products.find(p => p.id === id)!;
   return (
     <Layout>
       <PageBanner title="Cart" />
@@ -28,7 +27,7 @@ export function Cart() {
                     return (
                       <tr key={l.id} data-testid={`row-cart-${l.id}`}>
                         <td className="mc-t-img"><Link href={`/product/${p.slug}`}><img src={asset(p.images[0])} alt={p.name} /></Link></td>
-                        <td><Link href={`/product/${p.slug}`}>{p.name}</Link></td>
+                        <td><Link href={`/product/${p.slug}`}>{p.name}</Link>{!inStock(p) && <small style={{display:'block'}}>Unavailable or temporarily reserved. Contact the farm to check availability.</small>}</td>
                         <td>{fmt(priceOf(p))}</td>
                         <td>
                           <div className="mc-qty">
@@ -60,7 +59,8 @@ export function Cart() {
 }
 
 export function Checkout() {
-  const { cart, priceOf, cartTotal } = useStore();
+  const { cart, priceOf, cartTotal, products } = useStore();
+  const byId = (id: number) => products.find(p => p.id === id)!;
   const [method, setMethod] = useState('bacs');
   return (
     <Layout>
@@ -113,7 +113,7 @@ export function Checkout() {
 }
 
 export function Wishlist() {
-  const { wishlist, toggleWish, addToCart, inStock } = useStore();
+  const { wishlist, toggleWish, addToCart, inStock, products } = useStore();
   const items = wishlist.map((id) => products.find((p) => p.id === id)).filter(Boolean) as typeof products;
   return (
     <Layout>
@@ -151,7 +151,7 @@ export function Wishlist() {
 }
 
 export function Compare() {
-  const { compare, toggleCompare, addToCart, inStock } = useStore();
+  const { compare, toggleCompare, addToCart, inStock, products } = useStore();
   const items = compare.map((id) => products.find((p) => p.id === id)).filter(Boolean) as typeof products;
   return (
     <Layout>
@@ -188,7 +188,7 @@ export function Compare() {
 }
 
 export function AdminPreview() {
-  const { drafts, setDraft, clearDrafts } = useStore();
+  const { drafts, setDraft, clearDrafts, products } = useStore();
   const [q, setQ] = useState('');
   const [local, setLocal] = useState<Record<number, { price?: string; stock?: string }>>({});
   const list = products.filter((p) => p.name.toLowerCase().includes(q.toLowerCase()));
