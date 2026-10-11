@@ -13,7 +13,7 @@ test('custom-domain output uses root asset paths and preserves the domain', () =
   const paths = [...html.matchAll(/(?:src|href)="(\/[^"]+)"/g)].map(match => match[1]);
   assert.ok(paths.some(path => path.startsWith('/assets/')));
   for (const path of paths) assert.ok(statSync(`${output}${path.slice(1)}`).isFile());
-  assert.equal(readFileSync(`${output}CNAME`, 'utf8').trim(), 'minicattlefarm.com');
+  assert.equal(readFileSync(`${output}CNAME`, 'utf8').trim(), 'thewestfarm.shop');
   assert.ok(statSync(`${output}.nojekyll`).isFile());
   const script = paths.find(path => path.endsWith('.js'));
   assert.ok(script);
@@ -25,7 +25,7 @@ test('the built 404 page restores root routes without exposing receipt fragments
   const script = /<script>([\s\S]*?)<\/script>/.exec(html)?.[1];
   assert.ok(script);
   for (const route of ['/product/calf', '/order/test#access=private-fixture']) {
-    const current = new URL(route, 'https://minicattlefarm.com');
+    const current = new URL(route, 'https://thewestfarm.shop');
     let redirected;
     runInNewContext(script, {
       location: {
