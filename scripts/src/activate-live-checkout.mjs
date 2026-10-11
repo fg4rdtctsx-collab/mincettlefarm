@@ -11,7 +11,7 @@ if (!token || !process.env.OXAPAY_MERCHANT_API_KEY || !process.env.SESSION_SECRE
 if (process.argv[2] !== '--approved-live') throw new Error('Explicit live-checkout approval is required.');
 const site = JSON.parse(await readFile('/tmp/mcf-live-site.json', 'utf8'));
 const publicUrl = new URL(site.url);
-if (publicUrl.protocol !== 'https:' || publicUrl.hostname !== 'minicattlefarm.com') {
+if (publicUrl.protocol !== 'https:' || publicUrl.hostname !== 'thewestfarm.shop') {
   throw new Error('The verified production URL does not match the approved storefront.');
 }
 async function api(path, body, method = body ? 'POST' : 'GET') {
