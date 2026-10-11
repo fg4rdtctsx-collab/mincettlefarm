@@ -8,7 +8,7 @@ refreshes using `404.html`. Receipt access tokens stay in the fragment during
 the Pages redirect, not in a query sent to GitHub.
 
 No custom deployment workflow is installed. GitHub Pages is configured to serve
-`main` from the repository root at the custom domain `minicattlefarm.com`.
+`main` from the repository root at the custom domain `thewestfarm.shop`.
 The generated static output is provided both at the root and in `docs/`, allowing
 either publishing folder. Keep `.nojekyll` and `CNAME` in the selected folder.
 Merging a release pull request into `main` updates the live site.
@@ -30,7 +30,7 @@ crypto receipts and inventory must never be reseeded.
   (12+ characters). The password is not embedded in frontend builds or logged.
   Existing accounts' passwords are never silently replaced.
 - After explicit publication approval:
-  `node scripts/src/admin-release.mjs --approved-publish-backend --site-origin=https://minicattlefarm.com`.
+  `node scripts/src/admin-release.mjs --approved-publish-backend --site-origin=https://thewestfarm.shop`.
   Creates protected analytics tables and the public livestock photo bucket;
   uploads remain accessible only through authenticated owner API requests.
 - Build with `pnpm --filter @workspace/mini-cattle-farm run build:pages`;
@@ -46,13 +46,29 @@ crypto receipts and inventory must never be reseeded.
 Create an ignored `.env.production.local` inside `artifacts/mini-cattle-farm`
 with the selected Supabase project URL and **publishable/anon** browser key.
 Use the variable names in `.env.example`. Never enter a service-role key there.
-Build with `BASE_PATH=/` for `minicattlefarm.com`. Copy the output into the
+Build with `BASE_PATH=/` for `thewestfarm.shop`. Copy the output into the
 configured publishing folder without deleting source files or changing `CNAME`;
 the current release mirrors it at the root and in `docs/`. A custom-domain site
 must not be built with the repository prefix `/mincettlefarm/`.
 
 Until these values and the Edge Function exist, storefront browsing works but
 sign-in is explicitly unavailable and payment submission is disabled.
+
+### Changing the website domain
+
+After explicit owner approval, use
+`node scripts/src/update-site-domain.mjs --approved-domain=https://thewestfarm.shop`
+to update only the Auth site URL, redirect allowlist, and checkout website origin.
+This does not rotate credentials, change passwords, redeploy the function, or
+write to inventory and order tables. It checks Auth configuration readback and
+the deployed checkout CORS preflight.
+
+Keep the source, root, and `docs/` CNAME files aligned with the approved domain.
+Set the GitHub Pages custom domain before adding DNS records. In Namecheap,
+replace parking/redirect records for `@` and `www` with GitHub's four A records
+and `www` CNAME pointing to `fg4rdtctsx-collab.github.io`; preserve email records.
+DNS propagation and GitHub certificate issuance must finish before enabling
+Enforce HTTPS and accepting passwords or payments through the new domain.
 
 ## Backend setup
 

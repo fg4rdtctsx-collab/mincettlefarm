@@ -14,7 +14,7 @@ BASE_PATH=/ pnpm --filter @workspace/mini-cattle-farm run build:pages
 ```
 
 Output: `artifacts/mini-cattle-farm/dist/public`. The configured custom domain
-is `minicattlefarm.com`, so asset and navigation paths must start at `/`, not
+is `thewestfarm.shop`, so asset and navigation paths must start at `/`, not
 `/mincettlefarm/`. The public `CNAME` file preserves the domain across rebuilds.
 
 For a repository-path site without a custom domain, use
