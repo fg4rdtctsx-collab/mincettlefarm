@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createChaportController, isChaportPage } from '../../artifacts/mini-cattle-farm/src/lib/chaport';
+import { createChaportController, isChaportPage } from '../../artifacts/mini-cattle-farm/src/lib/chaport.ts';
 
 function fixture(path: string) {
   const scripts: Record<string, unknown>[] = [];
@@ -40,8 +40,8 @@ test('standard embed loads once across public SPA changes, without paid API call
   f.win.location.search = '?campaign=summer';
   f.controller.sync(); f.controller.sync();
   assert.equal(f.scripts.length, 1);
-  assert.equal(f.win.chaportConfig.appId, '69edff62c9d873834aeb5332');
-  assert.deepEqual(f.win.chaportConfig, { appId: '69edff62c9d873834aeb5332' });
+  assert.equal(f.win.chaportConfig.appId, '6ad9246f11e6c5b8e4677bff');
+  assert.deepEqual(f.win.chaportConfig, { appId: '6ad9246f11e6c5b8e4677bff' });
   assert.equal(f.win.chaport._q.length, 0);
   f.win.location.pathname = '/farm/contact';
   f.controller.sync();
