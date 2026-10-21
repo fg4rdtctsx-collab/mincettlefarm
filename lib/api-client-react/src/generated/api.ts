@@ -37,6 +37,7 @@ import type {
   OwnerAnalytics,
   OwnerLivestock,
   OwnerOrder,
+  OwnerVisitors,
   VisitInput
 } from './api.schemas';
 
@@ -148,6 +149,77 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       > => {
       return useMutation(getRecordVisitMutationOptions(options));
     }
+
+export const getGetOwnerVisitorsUrl = () => {
+
+
+
+
+  return `/api/owner/visitors`
+}
+
+export const getOwnerVisitors = async ( options?: Parameters<typeof customFetch>[1]): Promise<OwnerVisitors> => {
+
+  return customFetch<OwnerVisitors>(getGetOwnerVisitorsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetOwnerVisitorsQueryKey = () => {
+    return [
+    `/api/owner/visitors`
+    ] as const;
+    }
+
+
+export const getGetOwnerVisitorsQueryOptions = <TData = Awaited<ReturnType<typeof getOwnerVisitors>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getOwnerVisitors>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetOwnerVisitorsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getOwnerVisitors>>> = ({ signal }) => getOwnerVisitors({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getOwnerVisitors>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetOwnerVisitorsQueryResult = NonNullable<Awaited<ReturnType<typeof getOwnerVisitors>>>
+export type GetOwnerVisitorsQueryError = ErrorType<unknown>
+
+
+
+export function useGetOwnerVisitors<TData = Awaited<ReturnType<typeof getOwnerVisitors>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getOwnerVisitors>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetOwnerVisitorsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getGetOwnerAnalyticsUrl = (params: GetOwnerAnalyticsParams,) => {
   const normalizedParams = new URLSearchParams();

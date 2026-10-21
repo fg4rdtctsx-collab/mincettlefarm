@@ -223,6 +223,49 @@ export interface AnalyticsPage {
   views: number;
 }
 
+export interface VisitorDay {
+  day: string;
+  visitors: number;
+  pageViews: number;
+}
+
+export interface VisitorGroup {
+  label: string;
+  count: number;
+}
+
+export interface VisitorSession {
+  session: string;
+  firstSeen: string;
+  lastSeen: string;
+  path: string;
+  referrer: string;
+  device: string;
+  browser: string;
+  /** ISO country code or empty when unknown */
+  country: string;
+  pageViews: number;
+}
+
+export interface OwnerVisitors {
+  timezone: string;
+  trackingStartedAt: string;
+  live: number;
+  today: number;
+  allTime: number;
+  pageViews: number;
+  peakDay: string;
+  peakVisitors: number;
+  recentLimit: number;
+  days: VisitorDay[];
+  devices: VisitorGroup[];
+  browsers: VisitorGroup[];
+  countries: VisitorGroup[];
+  sources: VisitorGroup[];
+  topPages: AnalyticsPage[];
+  recent: VisitorSession[];
+}
+
 export type OwnerAnalyticsPeriod = typeof OwnerAnalyticsPeriod[keyof typeof OwnerAnalyticsPeriod];
 
 

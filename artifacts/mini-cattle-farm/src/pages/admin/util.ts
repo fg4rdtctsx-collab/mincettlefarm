@@ -24,3 +24,18 @@ export function useRefreshOwner() {
     qc.invalidateQueries({ queryKey: getGetCheckoutConfigQueryKey() }),
   ]);
 }
+
+export const STATUS_POLL = 10000;
+export const statusLabel = (status: string, method?: string) => {
+  const crypto = method !== 'bank';
+  switch (status) {
+    case 'creating': return 'Creating';
+    case 'pending': return crypto ? 'Awaiting crypto payment' : 'Awaiting bank transfer';
+    case 'paying': return 'Payment detected, confirming';
+    case 'paid': return crypto ? 'Paid, verified automatically' : 'Paid, bank confirmed by owner';
+    case 'review': return 'Needs review';
+    case 'expired': return 'Expired unpaid';
+    case 'failed': return 'Payment failed';
+    default: return status;
+  }
+};

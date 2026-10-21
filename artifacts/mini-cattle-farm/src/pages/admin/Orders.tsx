@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useActOnOwnerOrder, useGetOwnerOrders, type OwnerOrder } from '@workspace/api-client-react';
-import { POLL, usd, when, errText, isAuthFailure, useRefreshOwner } from './util';
+import { STATUS_POLL, statusLabel, usd, when, errText, isAuthFailure, useRefreshOwner } from './util';
 
 const safeUrl = (u?: string | null) => (u && /^mailto:salesminicattlefarm@gmail\.com(\?.*)?$/i.test(u) ? u : null);
 
 export function Orders({ onAuthFail }: { onAuthFail: (s: number) => void }) {
-  const q = useGetOwnerOrders({ query: { queryKey: ['/api/owner/orders'], refetchInterval: POLL } });
+  const q = useGetOwnerOrders({ query: { queryKey: ['/api/owner/orders'], refetchInterval: STATUS_POLL } });
   const act = useActOnOwnerOrder();
   const refresh = useRefreshOwner();
   const [confirming, setConfirming] = useState<string | null>(null);
@@ -27,15 +27,20 @@ export function Orders({ onAuthFail }: { onAuthFail: (s: number) => void }) {
       if (isAuthFailure(e)) onAuthFail((e as { status: number }).status); else setErr(errText(e));
     } finally { setBusyId(null); }
   };
-  const rows: OwnerOrder[] = q.data ?? [];
+  const [filter, setFilter] = useState('all');
+  const all: OwnerOrder[] = q.data ?? [];
+  const rows = all.filter(({ order: o }) => filter === 'all' || (filter === 'crypto' ? o.paymentMethod !== 'bank' : filter === 'bank' ? o.paymentMethod === 'bank' : o.status === filter));
   return (
     <section className="ad-panel" aria-labelledby="ad-ord-h">
-      <header className="ad-head"><h2 id="ad-ord-h">Orders</h2><button className="ad-btn ghost" onClick={() => q.refetch()} disabled={q.isFetching} data-testid="button-refresh-orders">{q.isFetching ? 'Refreshing…' : 'Refresh'}</button></header>
+      <header className="ad-head"><h2 id="ad-ord-h">Orders</h2><button className="ad-btn ghost" onClick={() => q.refetch()} disabled={q.isFetching} data-testid="button-refresh-orders">{q.isFetching ? 'Refreshing...' : 'Refresh'}</button></header>
+      <div className="ad-auto" role="note" data-testid="status-crypto-auto"><strong>Crypto payments are verified automatically.</strong> Status updates arrive from signed processor notifications and a background check, and this page refreshes every 10 seconds. No manual action is needed or possible for crypto orders.</div>
+      <div className="ad-seg" role="group" aria-label="Filter orders" style={{ width: 'fit-content', margin: '8px 0' }}>{['all', 'crypto', 'bank', 'paying', 'review', 'paid'].map(f => <button key={f} className={filter === f ? 'on' : ''} onClick={() => setFilter(f)} data-testid={`filter-orders-${f}`}>{f === 'paying' ? 'confirming' : f}</button>)}</div>
+      {q.data && all.length > 0 && rows.length === 0 && <div className="ad-empty-card"><strong>No orders match</strong><span>Try another filter.</span></div>}
       {msg && <div className="ad-ok" role="status">{msg}</div>}
       {err && <div className="ad-err" role="alert">{err}</div>}
       {q.isLoading && <div className="ad-skel" role="status">Loading orders…</div>}
       {q.isError && !isAuthFailure(q.error) && <div className="ad-err" role="alert">{errText(q.error)} <button onClick={() => q.refetch()}>Retry</button></div>}
-      {q.data && rows.length === 0 && <div className="ad-empty-card"><strong>No orders yet</strong><span>New orders appear here automatically.</span></div>}
+      {q.data && all.length === 0 && <div className="ad-empty-card"><strong>No orders yet</strong><span>New orders appear here automatically.</span></div>}
       <div className="ad-orders">
         {rows.map(({ order: o, buyer: b }) => {
           const bank = o.paymentMethod === 'bank';
@@ -43,7 +48,7 @@ export function Orders({ onAuthFail }: { onAuthFail: (s: number) => void }) {
           const busy = busyId === o.id;
           return (
             <article key={o.id} className="ad-order" data-testid={`card-order-${o.id}`}>
-              <div className="ad-order-top"><code>{o.id}</code><span className={`ad-pill s-${o.status}`}>{o.status}</span></div>
+              <div className="ad-order-top"><code>{o.id}</code><span className={`ad-pill s-${o.status}`}>{statusLabel(o.status, o.paymentMethod)}</span></div>
               <div className="ad-order-grid">
                 <div><h4>Buyer</h4><p>{b.name}<br /><a href={`mailto:${b.email}`}>{b.email}</a><br /><a href={`tel:${b.phone}`}>{b.phone}</a></p></div>
                 <div><h4>Payment</h4><p>{bank ? 'Bank transfer' : 'Crypto'}<br />Placed {when(o.createdAt)}{o.paidAt && <><br />Paid {when(o.paidAt)}</>}{o.fulfilledAt && <><br />Fulfilled {when(o.fulfilledAt)}</>}{link && <><br /><a href={link} target="_blank" rel="noopener noreferrer">Bank email</a></>}</p></div>
@@ -60,7 +65,7 @@ export function Orders({ onAuthFail }: { onAuthFail: (s: number) => void }) {
                   <div className="ad-row"><button className="ad-btn" disabled={!verified || busy} onClick={() => run(o.id, 'confirm_bank')} data-testid={`button-confirm-yes-${o.id}`}>{busy ? 'Confirming…' : 'Funds verified, confirm'}</button>
                     <button className="ad-btn ghost" onClick={() => setConfirming(null)} disabled={busy}>Not yet</button></div></div>}
                 {o.status === 'paid' && !o.fulfilledAt && <button className="ad-btn" onClick={() => run(o.id, 'fulfill')} disabled={busy} data-testid={`button-fulfill-${o.id}`}>{busy ? 'Working…' : 'Mark fulfilled'}</button>}
-                {!bank && o.status !== 'paid' && <span className="ad-note">Crypto orders are marked paid only by the payment processor.</span>}
+                {!bank && o.status !== 'paid' && <span className="ad-note">Marked paid automatically when the processor verifies payment.</span>}
               </div>
             </article>);
         })}

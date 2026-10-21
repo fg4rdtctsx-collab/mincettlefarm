@@ -26,6 +26,55 @@ export const RecordVisitResponse = zod.object({
 })
 
 
+export const GetOwnerVisitorsResponse = zod.object({
+  "timezone": zod.string(),
+  "trackingStartedAt": zod.string(),
+  "live": zod.number().int(),
+  "today": zod.number().int(),
+  "allTime": zod.number().int(),
+  "pageViews": zod.number().int(),
+  "peakDay": zod.string(),
+  "peakVisitors": zod.number().int(),
+  "recentLimit": zod.number().int(),
+  "days": zod.array(zod.object({
+  "day": zod.string(),
+  "visitors": zod.number().int(),
+  "pageViews": zod.number().int()
+})),
+  "devices": zod.array(zod.object({
+  "label": zod.string(),
+  "count": zod.number().int()
+})),
+  "browsers": zod.array(zod.object({
+  "label": zod.string(),
+  "count": zod.number().int()
+})),
+  "countries": zod.array(zod.object({
+  "label": zod.string(),
+  "count": zod.number().int()
+})),
+  "sources": zod.array(zod.object({
+  "label": zod.string(),
+  "count": zod.number().int()
+})),
+  "topPages": zod.array(zod.object({
+  "path": zod.string(),
+  "views": zod.number().int()
+})),
+  "recent": zod.array(zod.object({
+  "session": zod.string(),
+  "firstSeen": zod.string(),
+  "lastSeen": zod.string(),
+  "path": zod.string(),
+  "referrer": zod.string(),
+  "device": zod.string(),
+  "browser": zod.string(),
+  "country": zod.string().describe('ISO country code or empty when unknown'),
+  "pageViews": zod.number().int()
+}))
+})
+
+
 export const getOwnerAnalyticsQueryMonthRegExp = new RegExp('^\\d{4}-\\d{2}$');
 export const getOwnerAnalyticsQueryYearMin = 2020;
 export const getOwnerAnalyticsQueryYearMax = 2100;

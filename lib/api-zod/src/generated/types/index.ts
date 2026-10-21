@@ -36,4 +36,8 @@ export * from './ownerAnalytics';
 export * from './ownerAnalyticsPeriod';
 export * from './ownerLivestock';
 export * from './ownerOrder';
+export * from './ownerVisitors';
 export * from './visitInput';
+export * from './visitorDay';
+export * from './visitorGroup';
+export * from './visitorSession';

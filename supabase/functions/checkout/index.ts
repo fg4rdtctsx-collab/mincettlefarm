@@ -7,6 +7,7 @@ import {
   reconcileAbandonedOrders, seedSandboxInventory, oxapay, verifySignature,
   safeEqual, sha256,
   ownerInventory, publicInventory, createLivestock, updateLivestock, archiveLivestock, ownerOrderAction, ownerAnalytics,
+  ownerVisitors, recordAnonymousVisit,
   CreateOwnerLivestockBody, UpdateOwnerLivestockBody, ArchiveOwnerLivestockBody, ActOnOwnerOrderBody, RecordVisitBody,
 } from './core.generated.js';
 import { uploadLivestockImage } from './owner-upload.ts';
@@ -81,6 +82,7 @@ async function handle(req: Request): Promise<Response> {
       return json(orders.map(o => ({ order: receipt(o), buyer: o.buyer })));
     }
     if (path === '/api/owner/analytics' && req.method === 'GET') return json(await ownerAnalytics(url.searchParams.get('period') || 'daily', url.searchParams.get('month') ?? undefined, url.searchParams.get('year') ?? undefined));
+    if (path === '/api/owner/visitors' && req.method === 'GET') return json(await ownerVisitors());
     if (path === '/api/owner/inventory' && req.method === 'GET') return json(await ownerInventory());
     if (path === '/api/owner/images' && req.method === 'POST') {
       await throttle(req, 'owner-upload', 60, 200);
@@ -117,7 +119,7 @@ async function handle(req: Request): Promise<Response> {
     return json({ error: 'Admin route not found.' }, 404);
   }
   if (path === '/api/visits' && req.method === 'POST') {
-    await throttle(req, 'visits', 150, 10000);
+    await throttle(req, 'visits', 300, 20000);
     let body;
     try { body = JSON.parse(Buffer.from(await rawBody(req)).toString('utf8')); }
     catch (e) { if (e instanceof CheckoutError) throw e; throw new CheckoutError(400, 'Invalid analytics request.'); }
@@ -125,8 +127,7 @@ async function handle(req: Request): Promise<Response> {
     if (!parsed.success) throw new CheckoutError(400, 'Invalid anonymous page view.');
     const v = parsed.data;
     if (!/^\/(?:shop|about|contact|faq|services|cart|checkout|wishlist|compare|product\/[a-z0-9-]+|product-category\/[a-z0-9-]+)?$/.test(v.path)) throw new CheckoutError(400, 'This route is excluded from visitor tracking.');
-    const referrer = v.referrer && /^[a-z0-9.-]+$/i.test(v.referrer) ? v.referrer.toLowerCase() : '';
-    await db.execute(sql`insert into public.${sql.identifier(`${analyticsPrefix}_visits`)}(event_id,session_id,path,referrer) values(${v.eventId}::uuid,${v.sessionId}::uuid,${v.path},${referrer}) on conflict(event_id) do nothing`);
+    await recordAnonymousVisit(v, req.headers.get('user-agent') || '', req.headers.get('x-forwarded-for') || '');
     return json({ status: 'ok' });
   }
   if (path === '/api/healthz' && req.method === 'GET') return json({ status: 'ok' });

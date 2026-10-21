@@ -25,6 +25,15 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/HealthStatus" }
+  /owner/visitors:
+    get:
+      operationId: getOwnerVisitors
+      responses:
+        "200":
+          description: Anonymous traffic aggregates and recent sessions, owner access only
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OwnerVisitors" }
   /owner/analytics:
     get:
       operationId: getOwnerAnalytics
@@ -365,6 +374,52 @@ components:
       properties:
         path: { type: string }
         views: { type: integer }
+    VisitorDay:
+      type: object
+      required: [day, visitors, pageViews]
+      properties:
+        day: { type: string }
+        visitors: { type: integer }
+        pageViews: { type: integer }
+    VisitorGroup:
+      type: object
+      required: [label, count]
+      properties:
+        label: { type: string }
+        count: { type: integer }
+    VisitorSession:
+      type: object
+      required: [session, firstSeen, lastSeen, path, referrer, device, browser, country, pageViews]
+      properties:
+        session: { type: string }
+        firstSeen: { type: string }
+        lastSeen: { type: string }
+        path: { type: string }
+        referrer: { type: string }
+        device: { type: string }
+        browser: { type: string }
+        country: { type: string, description: "ISO country code or empty when unknown" }
+        pageViews: { type: integer }
+    OwnerVisitors:
+      type: object
+      required: [timezone, trackingStartedAt, live, today, allTime, pageViews, peakDay, peakVisitors, days, devices, browsers, countries, sources, topPages, recent, recentLimit]
+      properties:
+        timezone: { type: string }
+        trackingStartedAt: { type: string }
+        live: { type: integer }
+        today: { type: integer }
+        allTime: { type: integer }
+        pageViews: { type: integer }
+        peakDay: { type: string }
+        peakVisitors: { type: integer }
+        recentLimit: { type: integer }
+        days: { type: array, items: { $ref: "#/components/schemas/VisitorDay" } }
+        devices: { type: array, items: { $ref: "#/components/schemas/VisitorGroup" } }
+        browsers: { type: array, items: { $ref: "#/components/schemas/VisitorGroup" } }
+        countries: { type: array, items: { $ref: "#/components/schemas/VisitorGroup" } }
+        sources: { type: array, items: { $ref: "#/components/schemas/VisitorGroup" } }
+        topPages: { type: array, items: { $ref: "#/components/schemas/AnalyticsPage" } }
+        recent: { type: array, items: { $ref: "#/components/schemas/VisitorSession" } }
     OwnerAnalytics:
       type: object
       required: [period, timezone, trackingStartedAt, totals, buckets, topPages]

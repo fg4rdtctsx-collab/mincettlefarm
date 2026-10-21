@@ -2850,14 +2850,14 @@ var checkoutAvailable = () => Boolean(sandboxOrigin() && sandboxCallbackUrl() &&
 var checkoutIsSandbox = () => process.env.CHECKOUT_LIVE_ENABLED !== "true";
 async function seedSandboxInventory() {
   if (!checkoutIsSandbox()) return;
-  const rows = catalog_default.products.map((p) => ({
+  const rows2 = catalog_default.products.map((p) => ({
     id: p.id,
     name: p.name,
     priceCents: Math.round(p.price * 100),
     available: p.inStock ? 10 : 0
     // artificial test stock, NOT real herd quantities
   }));
-  if (rows.length) await db.insert(checkoutInventory).values(rows).onConflictDoNothing();
+  if (rows2.length) await db.insert(checkoutInventory).values(rows2).onConflictDoNothing();
 }
 function receipt(o) {
   const bankEmailUrl = o.paymentMethod === "bank" ? `mailto:salesminicattlefarm@gmail.com?${new URLSearchParams({
@@ -3069,13 +3069,13 @@ async function executeRows(executor, statement) {
   return Array.isArray(result) ? result : result.rows;
 }
 async function reservedUnits(executor, id) {
-  const rows = await executeRows(executor, sql2`
+  const rows2 = await executeRows(executor, sql2`
     select coalesce(sum((line->>'qty')::integer),0) as qty
     from ${checkoutOrders2}, jsonb_array_elements(${checkoutOrders2.lines}) as line
     where ${checkoutOrders2.released}=false and ${checkoutOrders2.status} not in ('paid','expired','failed')
     and (line->>'id')::integer=${id}
   `);
-  return Number(rows[0]?.qty ?? 0);
+  return Number(rows2[0]?.qty ?? 0);
 }
 function livestockDTO(p, reserved = 0) {
   const original = catalog_default.products.find((c) => c.id === p.id);
@@ -3096,13 +3096,13 @@ function livestockDTO(p, reserved = 0) {
 }
 async function ownerInventory() {
   const products = await db2.select().from(checkoutInventory2).orderBy(checkoutInventory2.id);
-  const rows = await executeRows(db2, sql2`
+  const rows2 = await executeRows(db2, sql2`
     select (line->>'id')::integer as id, sum((line->>'qty')::integer) as qty
     from ${checkoutOrders2}, jsonb_array_elements(${checkoutOrders2.lines}) as line
     where ${checkoutOrders2.released}=false and ${checkoutOrders2.status} not in ('paid','expired','failed')
     group by (line->>'id')::integer
   `);
-  const reservations = new Map(rows.map((r) => [Number(r.id), Number(r.qty)]));
+  const reservations = new Map(rows2.map((r) => [Number(r.id), Number(r.qty)]));
   return products.map((p) => livestockDTO(p, reservations.get(p.id) ?? 0));
 }
 async function publicInventory() {
@@ -3133,12 +3133,12 @@ function cleanLivestock(input) {
 }
 async function createLivestock(input) {
   const clean = cleanLivestock(input);
-  const rows = await executeRows(db2, sql2`
+  const rows2 = await executeRows(db2, sql2`
     insert into ${checkoutInventory2} (name,price_cents,available,metadata,active,version)
     values (${clean.name},${clean.priceCents},${input.stock},${JSON.stringify(clean.metadata)}::jsonb,${input.active !== false},0)
     returning id
   `);
-  const id = Number(rows[0]?.id);
+  const id = Number(rows2[0]?.id);
   const slug = `${clean.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "animal"}-${id}`;
   const [p] = await db2.update(checkoutInventory2).set({ metadata: { ...clean.metadata, slug } }).where(eq2(checkoutInventory2.id, id)).returning();
   return livestockDTO(p);
@@ -3217,7 +3217,7 @@ async function ownerAnalytics(period, month, year) {
   const trunc = period === "daily" ? "day" : "month";
   const format = period === "daily" ? "YYYY-MM-DD" : "YYYY-MM";
   const window = sql2`created_at >= (${start}::timestamp at time zone 'Africa/Lagos') and created_at < ((${start}::timestamp + ${span}::interval) at time zone 'Africa/Lagos')`;
-  const rows = await executeRows(db2, sql2`
+  const rows2 = await executeRows(db2, sql2`
     with buckets as (select generate_series(${start}::timestamp, ${start}::timestamp + ${span}::interval - ${step}::interval, ${step}::interval) as day),
     sales as (
       select date_trunc(${trunc}, ${checkoutOrders2.paidAt} at time zone 'Africa/Lagos') as day,
@@ -3237,7 +3237,7 @@ async function ownerAnalytics(period, month, year) {
   const pages = await executeRows(db2, sql2`select path,count(*) as views from public.${visits} where ${window} group by path order by views desc,path limit 10`);
   const traffic = await executeRows(db2, sql2`select count(distinct session_id) as visitors from public.${visits} where ${window}`);
   const started = await executeRows(db2, sql2`select started_at from public.${settings} where id=1`);
-  const buckets = rows.map((r) => ({ bucket: String(r.bucket), revenue: Number(r.revenue), paidOrders: Number(r.paid_orders), visitors: Number(r.visitors), pageViews: Number(r.page_views) }));
+  const buckets = rows2.map((r) => ({ bucket: String(r.bucket), revenue: Number(r.revenue), paidOrders: Number(r.paid_orders), visitors: Number(r.visitors), pageViews: Number(r.page_views) }));
   return {
     period,
     timezone: "Africa/Lagos",
@@ -3245,6 +3245,111 @@ async function ownerAnalytics(period, month, year) {
     buckets,
     topPages: pages.map((p) => ({ path: String(p.path), views: Number(p.views) })),
     totals: { bucket: period === "daily" ? selected : String(y), revenue: buckets.reduce((s, b) => s + b.revenue, 0), paidOrders: buckets.reduce((s, b) => s + b.paidOrders, 0), visitors: Number(traffic[0].visitors), pageViews: buckets.reduce((s, b) => s + b.pageViews, 0) }
+  };
+}
+
+// src/lib/visitors.ts
+import { db as db3 } from "@workspace/db";
+import { sql as sql3 } from "drizzle-orm";
+
+// src/lib/visitor-agent.ts
+function visitorAgent(agent) {
+  const device = /ipad|tablet|android(?!.*mobile)/i.test(agent) ? "Tablet" : /mobile|iphone|ipod/i.test(agent) ? "Mobile" : agent ? "Desktop" : "Unknown";
+  const browser = /edg[ea]?\//i.test(agent) ? "Edge" : /opr\/|opera/i.test(agent) ? "Opera" : /firefox|fxios/i.test(agent) ? "Firefox" : /chrome|crios/i.test(agent) ? "Chrome" : /safari/i.test(agent) ? "Safari" : "Unknown";
+  return { device, browser };
+}
+
+// src/lib/visitor-country.ts
+async function lookupVisitorCountry(address, request = fetch) {
+  const ip = address.split(",")[0].trim();
+  if (!ip || ip.length > 45 || !/^[a-f0-9:.]+$/i.test(ip) || /^(127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|::1$|f[cd]|fe80:)/i.test(ip)) return "";
+  try {
+    const response = await request(`https://api.country.is/${encodeURIComponent(ip)}`, {
+      signal: AbortSignal.timeout(1500),
+      redirect: "error"
+    });
+    if (!response.ok) return "";
+    const data = await response.json();
+    const country = data && typeof data === "object" && "country" in data ? data.country : null;
+    return typeof country === "string" && /^[A-Z]{2}$/.test(country) && !["XX", "ZZ"].includes(country) ? country : "";
+  } catch {
+    return "";
+  }
+}
+
+// src/lib/visitors.ts
+var prefix2 = () => checkoutIsSandbox() ? "sandbox_checkout" : "live_checkout";
+async function rows(statement) {
+  const result = await db3.execute(statement);
+  return Array.isArray(result) ? result : result.rows;
+}
+async function recordAnonymousVisit(v, agent, address = "") {
+  const visits = sql3.identifier(`${prefix2()}_visits`);
+  const referrer = v.referrer && /^[a-z0-9.-]+$/i.test(v.referrer) ? v.referrer.toLowerCase() : "";
+  const { device, browser } = visitorAgent(agent);
+  const previous = await rows(sql3`select country,event_id from public.${visits} where session_id=${v.sessionId}::uuid order by created_at desc limit 1`);
+  const country = String(previous[0]?.country || "") || (String(previous[0]?.event_id) === v.eventId ? "" : await lookupVisitorCountry(address));
+  await db3.execute(sql3`
+    insert into public.${visits}(event_id,session_id,path,referrer,last_seen,device,browser,country)
+    values(${v.eventId}::uuid,${v.sessionId}::uuid,${v.path},${referrer},now(),${device},${browser},${country})
+    on conflict(event_id) do update set last_seen=now()
+    where ${visits}.session_id=excluded.session_id and ${visits}.path=excluded.path
+  `);
+}
+async function ownerVisitors() {
+  const visits = sql3.identifier(`${prefix2()}_visits`);
+  const settings = sql3.identifier(`${prefix2()}_analytics_start`);
+  const [totals, days, peak, recent, devices, browsers, countries, sources, pages, started] = await Promise.all([
+    rows(sql3`select count(distinct session_id) as all_time, count(*) as views,
+      count(distinct session_id) filter(where created_at >= (date_trunc('day',now() at time zone 'Africa/Lagos') at time zone 'Africa/Lagos')) as today,
+      count(distinct session_id) filter(where last_seen >= now()-interval '90 seconds') as live from public.${visits}`),
+    rows(sql3`with days as (select generate_series(date_trunc('day',now() at time zone 'Africa/Lagos')-interval '6 days',date_trunc('day',now() at time zone 'Africa/Lagos'),interval '1 day') as day)
+      select to_char(d.day,'YYYY-MM-DD') as day,count(distinct v.session_id) as visitors,count(v.event_id) as views
+      from days d left join public.${visits} v on v.created_at >= (d.day at time zone 'Africa/Lagos') and v.created_at < ((d.day+interval '1 day') at time zone 'Africa/Lagos')
+      group by d.day order by d.day`),
+    rows(sql3`select to_char(created_at at time zone 'Africa/Lagos','YYYY-MM-DD') as day,count(distinct session_id) as visitors from public.${visits} group by 1 order by visitors desc,day desc limit 1`),
+    rows(sql3`with sessions as (
+      select session_id,min(created_at) as first_seen,max(coalesce(last_seen,created_at)) as last_seen,count(*) as views from public.${visits} group by session_id
+    ) select s.*,v.path,v.referrer,v.device,v.browser,v.country from sessions s
+      join lateral (select path,referrer,device,browser,country from public.${visits} where session_id=s.session_id order by created_at desc,event_id desc limit 1) v on true
+      order by s.last_seen desc,s.session_id limit 100`),
+    rows(sql3`select device as label,count(distinct session_id) as count from public.${visits} group by device order by count desc,label`),
+    rows(sql3`select browser as label,count(distinct session_id) as count from public.${visits} group by browser order by count desc,label`),
+    rows(sql3`select country as label,count(distinct session_id) as count from public.${visits} group by country order by count desc,label limit 250`),
+    rows(sql3`select coalesce(nullif(referrer,''),'Direct / unknown') as label,count(distinct session_id) as count from public.${visits} group by 1 order by count desc,label limit 10`),
+    rows(sql3`select path,count(*) as views from public.${visits} group by path order by views desc,path limit 10`),
+    rows(sql3`select started_at from public.${settings} limit 1`)
+  ]);
+  const n = (value) => Number(value ?? 0);
+  const iso = (value) => new Date(String(value)).toISOString();
+  const groups = (data) => data.map((r) => ({ label: String(r.label), count: n(r.count) }));
+  return {
+    timezone: "Africa/Lagos",
+    trackingStartedAt: iso(started[0]?.started_at ?? /* @__PURE__ */ new Date()),
+    live: n(totals[0]?.live),
+    today: n(totals[0]?.today),
+    allTime: n(totals[0]?.all_time),
+    pageViews: n(totals[0]?.views),
+    peakDay: String(peak[0]?.day ?? ""),
+    peakVisitors: n(peak[0]?.visitors),
+    days: days.map((r) => ({ day: String(r.day), visitors: n(r.visitors), pageViews: n(r.views) })),
+    devices: groups(devices),
+    browsers: groups(browsers),
+    countries: groups(countries),
+    sources: groups(sources),
+    topPages: pages.map((r) => ({ path: String(r.path), views: n(r.views) })),
+    recentLimit: 100,
+    recent: recent.map((r) => ({
+      session: String(r.session_id).slice(0, 8),
+      firstSeen: iso(r.first_seen),
+      lastSeen: iso(r.last_seen),
+      path: String(r.path),
+      referrer: String(r.referrer),
+      device: String(r.device),
+      browser: String(r.browser),
+      country: String(r.country),
+      pageViews: n(r.views)
+    }))
   };
 }
 
@@ -3260,6 +3365,53 @@ var RecordVisitBody = zod.object({
 });
 var RecordVisitResponse = zod.object({
   "status": zod.string()
+});
+var GetOwnerVisitorsResponse = zod.object({
+  "timezone": zod.string(),
+  "trackingStartedAt": zod.string(),
+  "live": zod.number().int(),
+  "today": zod.number().int(),
+  "allTime": zod.number().int(),
+  "pageViews": zod.number().int(),
+  "peakDay": zod.string(),
+  "peakVisitors": zod.number().int(),
+  "recentLimit": zod.number().int(),
+  "days": zod.array(zod.object({
+    "day": zod.string(),
+    "visitors": zod.number().int(),
+    "pageViews": zod.number().int()
+  })),
+  "devices": zod.array(zod.object({
+    "label": zod.string(),
+    "count": zod.number().int()
+  })),
+  "browsers": zod.array(zod.object({
+    "label": zod.string(),
+    "count": zod.number().int()
+  })),
+  "countries": zod.array(zod.object({
+    "label": zod.string(),
+    "count": zod.number().int()
+  })),
+  "sources": zod.array(zod.object({
+    "label": zod.string(),
+    "count": zod.number().int()
+  })),
+  "topPages": zod.array(zod.object({
+    "path": zod.string(),
+    "views": zod.number().int()
+  })),
+  "recent": zod.array(zod.object({
+    "session": zod.string(),
+    "firstSeen": zod.string(),
+    "lastSeen": zod.string(),
+    "path": zod.string(),
+    "referrer": zod.string(),
+    "device": zod.string(),
+    "browser": zod.string(),
+    "country": zod.string().describe("ISO country code or empty when unknown"),
+    "pageViews": zod.number().int()
+  }))
 });
 var getOwnerAnalyticsQueryMonthRegExp = new RegExp("^\\d{4}-\\d{2}$");
 var getOwnerAnalyticsQueryYearMin = 2020;
@@ -3612,12 +3764,14 @@ export {
   ownerAnalytics,
   ownerInventory,
   ownerOrderAction,
+  ownerVisitors,
   oxapay,
   publicInventory,
   readPrivateOrder,
   receipt,
   reconcile,
   reconcileAbandonedOrders,
+  recordAnonymousVisit,
   safeEqual,
   sandboxCallbackUrl,
   sandboxOrigin,

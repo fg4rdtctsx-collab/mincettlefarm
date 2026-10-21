@@ -2,6 +2,7 @@
 export * from '../../artifacts/api-server/src/lib/checkout.ts';
 export * from '../../artifacts/api-server/src/lib/oxapay.ts';
 export * from '../../artifacts/api-server/src/lib/admin.ts';
+export * from '../../artifacts/api-server/src/lib/visitors.ts';
 export {
   CreateOrderBody, CreateOwnerLivestockBody, UpdateOwnerLivestockBody,
   ArchiveOwnerLivestockBody, ActOnOwnerOrderBody, RecordVisitBody,
