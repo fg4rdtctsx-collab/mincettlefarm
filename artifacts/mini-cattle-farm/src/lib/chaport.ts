@@ -1,5 +1,5 @@
 // Public widget ID supplied by the owner, not an API credential.
-const APP_ID = '69edff62c9d873834aeb5332';
+const APP_ID = '6ad9246f11e6c5b8e4677bff';
 const SCRIPT_URL = 'https://app.chaport.com/javascripts/insert.js';
 
 type Chaport = {
