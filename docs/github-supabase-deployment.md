@@ -8,7 +8,7 @@ refreshes using `404.html`. Receipt access tokens stay in the fragment during
 the Pages redirect, not in a query sent to GitHub.
 
 No custom deployment workflow is installed. GitHub Pages is configured to serve
-`main` from the repository root at the custom domain `thewestfarm.shop`.
+`main` from the repository root at the custom domain `darwest.farm`.
 The generated static output is provided both at the root and in `docs/`, allowing
 either publishing folder. Keep `.nojekyll` and `CNAME` in the selected folder.
 Merging a release pull request into `main` updates the live site.
@@ -30,7 +30,7 @@ crypto receipts and inventory must never be reseeded.
   (12+ characters). The password is not embedded in frontend builds or logged.
   Existing accounts' passwords are never silently replaced.
 - After explicit publication approval:
-  `node scripts/src/admin-release.mjs --approved-publish-backend --site-origin=https://thewestfarm.shop`.
+  `node scripts/src/admin-release.mjs --approved-publish-backend --site-origin=https://darwest.farm`.
   Creates protected analytics tables and the public livestock photo bucket;
   uploads remain accessible only through authenticated owner API requests.
 - Build with `pnpm --filter @workspace/mini-cattle-farm run build:pages`;
@@ -46,7 +46,7 @@ crypto receipts and inventory must never be reseeded.
 Create an ignored `.env.production.local` inside `artifacts/mini-cattle-farm`
 with the selected Supabase project URL and **publishable/anon** browser key.
 Use the variable names in `.env.example`. Never enter a service-role key there.
-Build with `BASE_PATH=/` for `thewestfarm.shop`. Copy the output into the
+Build with `BASE_PATH=/` for `darwest.farm`. Copy the output into the
 configured publishing folder without deleting source files or changing `CNAME`;
 the current release mirrors it at the root and in `docs/`. A custom-domain site
 must not be built with the repository prefix `/mincettlefarm/`.
@@ -57,7 +57,7 @@ sign-in is explicitly unavailable and payment submission is disabled.
 ### Changing the website domain
 
 After explicit owner approval, use
-`node scripts/src/update-site-domain.mjs --approved-domain=https://thewestfarm.shop`
+`node scripts/src/update-site-domain.mjs --approved-domain=https://darwest.farm`
 to update only the Auth site URL, redirect allowlist, and checkout website origin.
 This does not rotate credentials, change passwords, redeploy the function, or
 write to inventory and order tables. It checks Auth configuration readback and

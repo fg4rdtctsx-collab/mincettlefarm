@@ -53,7 +53,7 @@ if (mode === '--bootstrap-owner') {
   console.log(JSON.stringify({ ownerApproved: true, accountCreated: created, existingPasswordChanged: false }));
 } else {
   const origin = process.argv.find(arg => arg.startsWith('--site-origin='))?.slice('--site-origin='.length);
-  if (!origin || origin !== 'https://thewestfarm.shop') throw new Error('Supply the verified, explicitly approved farm origin with --site-origin=https://thewestfarm.shop.');
+  if (!origin || origin !== 'https://darwest.farm') throw new Error('Supply the verified, explicitly approved farm origin with --site-origin=https://darwest.farm.');
   await management('/database/query', { query: await readFile('supabase/migrations/202610030003_admin_bank.sql','utf8'), read_only: false });
   const buckets = await projectRequest('/storage/v1/bucket');
   const bucket = { id: 'livestock-photos', name: 'livestock-photos', public: true, file_size_limit: 5*1024*1024, allowed_mime_types: ['image/jpeg','image/png','image/webp'] };
