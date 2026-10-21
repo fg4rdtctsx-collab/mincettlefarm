@@ -272,13 +272,13 @@ export function Contact() {
       <PageBanner title="Contact" image={pageImages.contact[0]} />
       <section className="mc-container mc-sec mc-narrow">
         <h2 className="mc-center">Discover Your Ideal Highland and Miniature Cattle Now</h2>
-        <p className="mc-lead mc-center">Reach Out to Trusted Breeders Through Our Secure Platform<span className="mc-contact-email">Email us at <a href="mailto:salesminicattlefarm@gmail.com">salesminicattlefarm@gmail.com</a></span></p>
+        <p className="mc-lead mc-center">Reach Out to Trusted Breeders Through Our Secure Platform<span className="mc-contact-email">Email us at <a href="mailto:darwestfarm@gmail.com">darwestfarm@gmail.com</a></span></p>
         <form className="mc-form" onSubmit={(e) => {
           e.preventDefault();
           const data = new FormData(e.currentTarget);
           const subject = String(data.get('subject') || '').trim() || 'Mini Cattle Farm inquiry';
           const body = `Name: ${String(data.get('name') || '').trim()}\nReply email: ${String(data.get('email') || '').trim()}\n\n${String(data.get('message') || '').trim()}`;
-          window.location.href = `mailto:salesminicattlefarm@gmail.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+          window.location.href = `mailto:darwestfarm@gmail.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
           setState('email');
         }} data-testid="form-contact">
           <label>Name <abbr>*</abbr><input required name="name" maxLength={100} autoComplete="name" data-testid="input-name" /></label>
@@ -289,7 +289,7 @@ export function Contact() {
           <p className="mc-note">This opens your email app with your message filled in. Press Send there to deliver it.</p>
           {state === 'email' && (
             <div className="mc-alert" role="status" data-testid="status-email-draft">
-              <strong>Finish sending in your email app.</strong> If it did not open, your message is still here. You can email <a href="mailto:salesminicattlefarm@gmail.com">salesminicattlefarm@gmail.com</a> directly.
+              <strong>Finish sending in your email app.</strong> If it did not open, your message is still here. You can email <a href="mailto:darwestfarm@gmail.com">darwestfarm@gmail.com</a> directly.
             </div>
           )}
         </form>
