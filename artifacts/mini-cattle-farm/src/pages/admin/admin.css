@@ -74,6 +74,11 @@
 .ad-panel{background:transparent;border:0;padding:0}
 .ad-head h2,.ad-panel h3,.ad-empty-card strong,.ad-deny h2,.ad-kpi strong,.ad-stat strong{font-family:"Segoe UI Variable","Segoe UI",system-ui,sans-serif}
 .ad-head h2{font-size:26px;letter-spacing:-.01em}
+.ad-root h1,.ad-root h2,.ad-root h3,.ad-root h4,.ad-root h5{color:var(--ink)}
+.ad-root .ad-bars{overflow-y:hidden}
+.ad-root .ad-bar-track{min-height:0}
+.ad-root .ad-bar-col{min-height:0}
+.ad-root .ad-bar-val,.ad-root .ad-bar-key{flex-shrink:0}
 .ad-card,.ad-kpi,.ad-stat,.ad-order,.ad-form,.ad-confirm,.ad-empty-card{background:linear-gradient(180deg,#171d31,#121728);border-color:var(--line);border-radius:14px}
 .ad-card{padding:18px}.ad-kpi,.ad-stat{border-top-width:3px}
 .ad-kpi{border-top-color:var(--ok)}.ad-kpi.k2{border-top-color:var(--acc)}.ad-kpi.k3{border-top-color:#38bdf8}.ad-kpi.k4{border-top-color:var(--warn)}
