@@ -2,12 +2,25 @@ import { Router, type Request, type Response, type NextFunction } from "express"
 import { getAuth } from "@clerk/express";
 import { db, checkoutInventory, checkoutOrders } from "@workspace/db";
 import { eq, desc } from "drizzle-orm";
-import { CreateOrderBody } from "@workspace/api-zod";
+import { CreateOrderBody, RecordVisitBody } from "@workspace/api-zod";
 import { applyPayment, checkoutAvailable, createSandboxOrder, readPrivateOrder, receipt, reconcile } from "../lib/checkout";
 import { CheckoutError, oxapay, verifySignature, type PaymentInfo } from "../lib/oxapay";
-import { publicInventory } from "../lib/admin";
+import { publicInventory, ownerAnalytics } from "../lib/admin";
+import { ownerVisitors, recordAnonymousVisit } from "../lib/visitors";
 
 const router = Router();
+function approvedOwner(req: Request, res: Response, next: NextFunction) {
+  const userId = getAuth(req).userId;
+  if (!userId) { res.status(401).json({ error: "Sign in to view owner reports." }); return; }
+  const owners = (process.env.OWNER_CLERK_USER_IDS ?? "").split(",").map(s => s.trim()).filter(Boolean);
+  if (!owners.includes(userId)) { res.status(403).json({ error: "Owner access has not been approved." }); return; }
+  res.setHeader("Cache-Control", "no-store");
+  next();
+}
+router.get("/owner/visitors", approvedOwner, async (_req, res) => { res.json(await ownerVisitors()); });
+router.get("/owner/analytics", approvedOwner, async (req, res) => {
+  res.json(await ownerAnalytics(String(req.query.period || "daily"), req.query.month ? String(req.query.month) : undefined, req.query.year ? String(req.query.year) : undefined));
+});
 const windows = new Map<string, { count: number; end: number }>();
 function throttle(req: Request, res: Response, next: NextFunction) {
   const now = Date.now();
@@ -19,6 +32,14 @@ function throttle(req: Request, res: Response, next: NextFunction) {
   windows.set(key, entry);
   next();
 }
+router.post("/visits", throttle, async (req, res) => {
+  const parsed = RecordVisitBody.safeParse(req.body);
+  if (!parsed.success || !/^\/(?:shop|about|contact|faq|services|cart|checkout|wishlist|compare|product\/[a-z0-9-]+|product-category\/[a-z0-9-]+)?$/.test(parsed.data.path)) {
+    res.status(400).json({ error: "Invalid anonymous public page view." }); return;
+  }
+  await recordAnonymousVisit(parsed.data, req.get("user-agent") || "", req.ip || "");
+  res.json({ status: "ok" });
+});
 router.get("/checkout/config", async (_req, res) => {
   const products = await publicInventory();
   res.setHeader("Cache-Control", "no-store");

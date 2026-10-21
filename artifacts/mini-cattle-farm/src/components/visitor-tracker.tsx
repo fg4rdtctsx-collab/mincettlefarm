@@ -7,12 +7,14 @@ import { runOptionalVisitorTracking } from '@/lib/visitor-tracking';
 export function VisitorTracker() {
   const [location] = useLocation();
   const session = useRef<string | null>(null);
-  const prior = useRef('');
-  useEffect(() => runOptionalVisitorTracking(() => {
+  const event = useRef<{ path: string; id: string } | null>(null);
+  useEffect(() => {
+    let timer: ReturnType<typeof setInterval> | undefined;
+    runOptionalVisitorTracking(() => {
     if (navigator.doNotTrack === '1' || (navigator as Navigator & { globalPrivacyControl?: boolean }).globalPrivacyControl) return;
     const path = location.split(/[?#]/)[0];
-    if (!/^\/(?:shop|about|contact|faq|services|cart|checkout|wishlist|compare|product\/[a-z0-9-]+|product-category\/[a-z0-9-]+)?$/.test(path) || prior.current === path) return;
-    prior.current = path;
+    if (!/^\/(?:shop|about|contact|faq|services|cart|checkout|wishlist|compare|product\/[a-z0-9-]+|product-category\/[a-z0-9-]+)?$/.test(path)) return;
+    if (event.current?.path !== path) event.current = { path, id: crypto.randomUUID() };
     if (!session.current) {
       try {
         const saved = sessionStorage.getItem('mcf-visitor-session');
@@ -22,9 +24,17 @@ export function VisitorTracker() {
     }
     let referrer = '';
     try { referrer = document.referrer ? new URL(document.referrer).hostname : ''; } catch { /* no referrer */ }
-    void recordVisit({ eventId: crypto.randomUUID(), sessionId: session.current, path, referrer }).catch(() => {
-      // Analytics failure must not interrupt purchases or expose customer information.
+    const visit = { eventId: event.current.id, sessionId: session.current, path, referrer };
+    const send = () => {
+      if (document.visibilityState === 'hidden') return;
+      void recordVisit(visit).catch(() => {
+        // Analytics failure must not interrupt purchases or expose customer information.
+      });
+    };
+    send();
+    timer = setInterval(send, 60000);
     });
-  }), [location]);
+    return () => { if (timer) clearInterval(timer); };
+  }, [location]);
   return null;
 }
