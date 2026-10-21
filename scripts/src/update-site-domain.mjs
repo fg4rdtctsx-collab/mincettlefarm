@@ -1,6 +1,6 @@
 // Approved domain-only cutover. Never rotate credentials, redeploy code, or mutate data.
 const ref = 'zklnjcflrbgzzntxgdrk';
-const origin = 'https://thewestfarm.shop';
+const origin = 'https://darwest.farm';
 if (process.argv[2] !== `--approved-domain=${origin}`) {
   throw new Error('Supply the explicitly approved website origin.');
 }
@@ -23,7 +23,7 @@ const current = await management('/config/auth');
 // Preserve unrelated redirect entries, but retire redirects through the held domain.
 const redirects = new Set((current.uri_allow_list || '').split(',').map(v => v.trim()).filter(Boolean));
 for (const entry of redirects) {
-  if (/^https?:\/\/(?:www\.)?minicattlefarm\.com(?:[/:]|$)/i.test(entry)) redirects.delete(entry);
+  if (/^https?:\/\/(?:www\.)?(?:minicattlefarm\.com|thewestfarm\.shop)(?:[/:]|$)/i.test(entry)) redirects.delete(entry);
 }
 redirects.add(`${origin}/**`);
 await management('/config/auth', { site_url: origin, uri_allow_list: [...redirects].join(',') }, 'PATCH');
@@ -32,7 +32,7 @@ const confirmed = await management('/config/auth');
 if (confirmed.site_url !== origin || !confirmed.uri_allow_list?.split(',').includes(`${origin}/**`)) {
   throw new Error('Auth domain readback did not match the approved origin.');
 }
-const response = await fetch(`https://${ref}.supabase.co/functions/v1/checkout/catalog`, {
+const response = await fetch(`https://${ref}.supabase.co/functions/v1/checkout/api/checkout/config`, {
   method: 'OPTIONS',
   headers: { Origin: origin, 'Access-Control-Request-Method': 'GET' },
   signal: AbortSignal.timeout(30000),
