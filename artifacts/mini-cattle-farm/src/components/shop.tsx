@@ -64,8 +64,8 @@ export function Layout({ children }: { children: ReactNode }) {
             ))}
           </nav>
           <div className="mc-header-right">
-            <a className="mc-contact-ref" href="mailto:salesminicattlefarm@gmail.com" aria-label="Email Mini Cattle Farm">
-              salesminicattlefarm@gmail.com
+            <a className="mc-contact-ref" href="mailto:darwestfarm@gmail.com" aria-label="Email Mini Cattle Farm">
+              darwestfarm@gmail.com
             </a>
             <Link href="/wishlist" className="mc-icon-link" aria-label="Wishlist" data-testid="link-wishlist">
               <Heart size={19} />
