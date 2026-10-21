@@ -1,13 +1,14 @@
 import { useEffect, useRef } from 'react';
 import { useLocation } from 'wouter';
 import { recordVisit } from '@workspace/api-client-react';
+import { runOptionalVisitorTracking } from '@/lib/visitor-tracking';
 
 /** First-party anonymous session counts; never send email, IP, query or receipt tokens. */
 export function VisitorTracker() {
   const [location] = useLocation();
   const session = useRef<string | null>(null);
   const prior = useRef('');
-  useEffect(() => {
+  useEffect(() => runOptionalVisitorTracking(() => {
     if (navigator.doNotTrack === '1' || (navigator as Navigator & { globalPrivacyControl?: boolean }).globalPrivacyControl) return;
     const path = location.split(/[?#]/)[0];
     if (!/^\/(?:shop|about|contact|faq|services|cart|checkout|wishlist|compare|product\/[a-z0-9-]+|product-category\/[a-z0-9-]+)?$/.test(path) || prior.current === path) return;
@@ -24,6 +25,6 @@ export function VisitorTracker() {
     void recordVisit({ eventId: crypto.randomUUID(), sessionId: session.current, path, referrer }).catch(() => {
       // Analytics failure must not interrupt purchases or expose customer information.
     });
-  }, [location]);
+  }), [location]);
   return null;
 }
